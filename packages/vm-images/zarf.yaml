@@ -11,10 +11,9 @@ constants:
   - name: VM_IMAGE_VERSION
     value: "###ZARF_PKG_TMPL_VERSION###"
 
-# Build this package after running `uds run build-images` to produce qcow2 outputs.
-# The build-vm-images-package task in tasks.yaml handles the full workflow:
-#   1. Build qcow2 container images from packer output
-#   2. zarf package create packages/vm-images/
+# Run `uds run build-images` to produce qcow2 outputs, then use
+# `uds run build-vm-images` to wrap them in local container images. The
+# top-level lab package and bundle consume those images.
 
 components:
   - name: vm-image-server

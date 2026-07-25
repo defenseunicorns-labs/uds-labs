@@ -150,19 +150,34 @@ UDS_CORE_QCOW2=packer/output/uds-core/lab-playground-uds-core.qcow2 \
 ./scripts/create-golden-pvc.sh
 ```
 
-## Available Tasks
+## Local Development
+
+See [Local development](docs/local-development.md) for prerequisites, common
+iteration loops, task inputs, troubleshooting, and the complete repository task
+reference.
+
+Discover tasks directly from `tasks.yaml`:
 
 ```bash
-uds run dry-run         # tests + Helm lint/render + Zarf lint/render; no cluster
-uds run dev             # full e2e (calls dev.sh)
-uds run build-images    # packer builds only
-uds run cluster-up      # cluster setup only
-uds run patch-coredns   # re-patch CoreDNS after redeploy
-uds run create-test-user
-uds run start-proxy     # nginx SNI proxy (auto-detects MetalLB IPs)
-uds run stop-proxy
-uds run redeploy        # rebuild + redeploy operator image, no cluster wipe
+uds run --list       # repository tasks
+uds run --list-all   # repository tasks plus imported shared tasks
 ```
+
+Common workflows:
+
+```bash
+uds run dry-run                      # tests and package rendering; no cluster
+uds run dev --with CDI_FLAVOR=unicorn
+uds run dev --with WIPE_CLUSTER=0    # preserve k3s
+uds run redeploy                     # fastest deployed-code iteration
+uds run smoke-test
+```
+
+> **Warning:** `uds run dev` and `uds run cluster-up` default to
+> `WIPE_CLUSTER=1` and uninstall an existing k3s cluster.
+
+For a clean cluster rebuild that reuses existing local qcow2 images, follow the
+[nuclear reset workflow](docs/local-development.md#nuclear-reset-with-existing-local-vm-images).
 
 ## VM Access
 
@@ -314,9 +329,9 @@ environment are configured.
 
 The VM-image package must be built and published to
 `registry.uds-mil.us/enxo/lab-vm-images` before a clean development cluster can
-run the default flow. Build it locally with `uds run build-images` followed by
-`uds run build-vm-images-package`, then publish it manually with the
-`udm-common` publishing tasks.
+run the default flow. Build it locally with `uds run build-images`, wrap the
+qcow2 files with `uds run build-vm-images`, then publish them with
+`uds run push-vm-images`.
 
 ```bash
 # GitHub UI: Actions -> Bump Version -> Run workflow -> select minor/major/patch
