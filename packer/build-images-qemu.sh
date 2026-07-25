@@ -94,7 +94,7 @@ fi
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
 echo "  qcow2 images built and patched (cloud-init enabled)."
-echo "  Next: uds run build-vm-images-package && uds run deploy-bundle"
+echo "  Next: uds run dev --with WIPE_CLUSTER=0 --with LOCAL_VM_IMAGES=1"
 echo ""
 echo "  Base:      ${BASE_IMAGE:-<skipped>}"
 echo "  UDS Core:  ${UDS_CORE_IMAGE:-<skipped>}"
