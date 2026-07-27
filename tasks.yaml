@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 includes:
   - attest: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/attest.yaml
   - build: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/build.yaml
@@ -7,7 +10,12 @@ includes:
   - setup: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/setup.yaml
   - vouch: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/vouch.yaml
   - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
-
+  - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/create.yaml
+  - pull: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/pull.yaml
+  - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/deploy.yaml
+  - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/actions.yaml
+  - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/upgrade.yaml
+  - uds-publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/publish.yaml
 tasks:
   # ── Clean build artifacts ─────────────────────────────────────────────────────
 
@@ -41,6 +49,17 @@ tasks:
       - description: Run golangci-lint
         cmd: golangci-lint run ./...
 
+  - name: lint:all
+    description: Lint YAML and shell files without repository-wide license enforcement
+    actions:
+      - description: Lint YAML files
+        cmd: yamllint .
+      - description: Lint shell scripts
+        cmd: |
+          set -euo pipefail
+          find . -type f -name '*.sh' -not -path './.git/*' -print0 \
+            | xargs -0 -r shellcheck -e SC1091
+
   # ── Build VM images ───────────────────────────────────────────────────────────
   # Full packer run takes 60+ min. Pass skip=1 to skip image builds entirely,
   # or skip individual tiers with skip_base/skip_uds_core.
@@ -67,13 +86,14 @@ tasks:
             echo "Generating packer SSH keypair..."
             ssh-keygen -t ed25519 -f packer/packer-key -N "" -q
           fi
+          ssh-keygen -y -f packer/packer-key > packer/packer-key.pub
       - description: Build packer images
         cmd: |
           if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.build }}" != "1" ]; then
             echo "Skipping packer builds (skip=1)"
             exit 0
           fi
-          cd packer
+          cd packer || exit
           SKIP_BASE="${{ .inputs.skip_base }}" \
           SKIP_UDS_CORE="${{ .inputs.skip_uds_core }}" \
           ./build-images-qemu.sh
@@ -84,16 +104,16 @@ tasks:
   # compose these. Pass skip=1 to any step to no-op it from a composite task.
 
   - name: preflight
-    description: Verify required tools, KVM access, and KubeVirt package directory
+    description: Verify required tools, KVM access, package inputs, and image config
     inputs:
       kubevirt_pkg_dir:
         description: Path to local KubeVirt package directory
         default: $HOME/src/github.com/uds-packages/kubevirt
-      cdi_pkg_dir:
-        description: Path to local CDI operator package directory
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer
+      cdi_package:
+        description: Path to prebuilt CDI Zarf package artifact
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
-      - description: Check tools, KVM, and KubeVirt dir
+      - description: Check tools, KVM, package artifacts, and image config
         cmd: |
           FAILED=0
           for tool in kubectl zarf uds curl jq yq ip docker; do
@@ -101,7 +121,7 @@ tasks:
           done
           ls /dev/kvm >/dev/null 2>&1 || { echo "ERROR: /dev/kvm not found — enable KVM in BIOS (AMD-V / Intel VT-x)"; FAILED=1; }
           [ -d "${{ .inputs.kubevirt_pkg_dir }}" ] || { echo "ERROR: KubeVirt package dir not found: ${{ .inputs.kubevirt_pkg_dir }}"; FAILED=1; }
-          [ -d "${{ .inputs.cdi_pkg_dir }}" ] || { echo "ERROR: CDI package dir not found: ${{ .inputs.cdi_pkg_dir }}"; FAILED=1; }
+          [ -f "${{ .inputs.cdi_package }}" ] || { echo "ERROR: CDI package artifact not found: ${{ .inputs.cdi_package }}"; FAILED=1; }
           [ "$FAILED" = "0" ] || exit 1
       - task: validate-package-config
 
@@ -110,6 +130,7 @@ tasks:
     actions:
       - description: Validate VM image server and CDI import lifecycle
         cmd: |
+          # shellcheck shell=bash
           set -euo pipefail
           VM_SERVER=packages/vm-images/manifests/image-server.yaml
           VM_MANIFEST=packages/vm-images/manifests/golden-pvcs.yaml
@@ -130,6 +151,7 @@ tasks:
     actions:
       - description: Run packaging contracts and Helm lint
         cmd: |
+          # shellcheck shell=bash
           set -euo pipefail
           GOCACHE=/tmp/uds-lab-go-cache go test . -run 'TestHelmChart|TestVMImagePackage|TestApplicationImage'
           helm lint chart
@@ -140,6 +162,7 @@ tasks:
             >/dev/null
       - description: Lint and render Zarf package definitions
         cmd: |
+          # shellcheck shell=bash
           set -euo pipefail
           VERSION=$(yq -r '.metadata.version' zarf.yaml)
           uds zarf dev lint . --set VM_IMAGE_TAG="$VERSION"
@@ -252,6 +275,7 @@ tasks:
         maxTotalSeconds: 130
       - description: Configure MetalLB IP pool
         cmd: |
+          # shellcheck shell=bash
           if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
           RANGE="${{ .inputs.range }}"
           if [ -z "$RANGE" ]; then
@@ -261,22 +285,22 @@ tasks:
             RANGE="${SUBNET}.200-${SUBNET}.250"
           fi
           echo "MetalLB pool: $RANGE"
-          kubectl apply -f - <<EOF
-          apiVersion: metallb.io/v1beta1
-          kind: IPAddressPool
-          metadata:
-            name: local-pool
-            namespace: metallb-system
-          spec:
-            addresses:
-            - ${RANGE}
-          ---
-          apiVersion: metallb.io/v1beta1
-          kind: L2Advertisement
-          metadata:
-            name: local-adv
-            namespace: metallb-system
-          EOF
+          printf '%s\n' \
+            'apiVersion: metallb.io/v1beta1' \
+            'kind: IPAddressPool' \
+            'metadata:' \
+            '  name: local-pool' \
+            '  namespace: metallb-system' \
+            'spec:' \
+            '  addresses:' \
+            "  - ${RANGE}" \
+            '---' \
+            'apiVersion: metallb.io/v1beta1' \
+            'kind: L2Advertisement' \
+            'metadata:' \
+            '  name: local-adv' \
+            '  namespace: metallb-system' \
+            | kubectl apply -f -
 
   - name: zarf-init
     description: Initialize Zarf in the cluster
@@ -335,9 +359,9 @@ tasks:
     actions:
       - description: Build KubeVirt package
         cmd: |
-          cd "${{ .inputs.dir }}"
+          cd "${{ .inputs.dir }}" || exit
           if [ "${{ .inputs.skip_if_exists }}" = "1" ] || [ "${{ .inputs.rebuild }}" != "1" ]; then
-            EXISTING=$(ls zarf-package-kubevirt-amd64-*-upstream.tar.zst 2>/dev/null | tail -1)
+            EXISTING=$(find . -maxdepth 1 -type f -name 'zarf-package-kubevirt-amd64-*-upstream.tar.zst' -print | sort | tail -1)
             if [ -n "$EXISTING" ]; then
               echo "Existing package found ($EXISTING) — skipping rebuild"
               exit 0
@@ -346,41 +370,23 @@ tasks:
           zarf package create . -f upstream --confirm
         maxTotalSeconds: 3600
 
-  - name: build-cdi
-    description: Build the standalone CDI operator Zarf package
+  - name: stage-cdi-package
+    description: Stage a prebuilt CDI Zarf package for bundle creation
     inputs:
-      dir:
-        description: Path to the CDI operator package directory
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer
-      flavor:
-        description: CDI package flavor
-        default: upstream
+      package:
+        description: Path to prebuilt CDI Zarf package artifact
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
-      - description: Build CDI package
+      - description: Copy CDI package into bundle input directory
         cmd: |
+          # shellcheck shell=bash
           set -euo pipefail
-          OUTPUT_DIR="$PWD"
-          cd "${{ .inputs.dir }}"
-
-          FLAVOR="${{ .inputs.flavor }}"
-          uds run lint:all
-          uds run test-render
-          uds run test-ownership
-          uds run build --set FLAVOR="$FLAVOR"
-
-          PACKAGE=$(find . -maxdepth 1 \
-            -name "zarf-package-cdi-*-dev-${FLAVOR}.tar.zst" \
-            -print | sort | tail -1)
-          if [ -z "$PACKAGE" ]; then
-            echo "ERROR: CDI ${FLAVOR} package was not created" >&2
-            exit 1
-          fi
-
-          SUFFIX="-${FLAVOR}.tar.zst"
-          TARGET="${PACKAGE%"$SUFFIX"}.tar.zst"
-          TARGET_NAME=$(basename "$TARGET")
-          cp "$PACKAGE" "$OUTPUT_DIR/$TARGET_NAME"
-          echo "Staged $OUTPUT_DIR/$TARGET_NAME for the local bundle"
+          PACKAGE="${{ .inputs.package }}"
+          [ -f "$PACKAGE" ] || { echo "ERROR: CDI package not found: $PACKAGE" >&2; exit 1; }
+          mkdir -p bundle/cdi
+          find bundle/cdi -maxdepth 1 -type f -name 'zarf-package-cdi-*.tar.zst' -delete
+          cp "$PACKAGE" bundle/cdi/zarf-package-cdi-amd64-dev.tar.zst
+          echo "Staged $PACKAGE as bundle/cdi/zarf-package-cdi-amd64-dev.tar.zst"
         maxTotalSeconds: 1200
 
   - name: build-vm-images
@@ -406,6 +412,7 @@ tasks:
       - description: Build OCI container images from qcow2 files
         maxTotalSeconds: 600
         cmd: |
+          # shellcheck shell=bash
           if [ "${{ .inputs.build }}" != "1" ]; then
             echo "Skipping local VM image container builds"
             exit 0
@@ -416,7 +423,7 @@ tasks:
           fi
           build_image() {
             local name="$1" dockerfile="$2" context_dir="$3"
-            if [ ! -d "$context_dir" ] || [ -z "$(ls "$context_dir"/*.qcow2 2>/dev/null)" ]; then
+            if [ ! -d "$context_dir" ] || ! find "$context_dir" -maxdepth 1 -type f -name '*.qcow2' -print -quit | grep -q .; then
               echo "SKIP: no qcow2 in $context_dir — skipping $name"
               return 0
             fi
@@ -495,7 +502,7 @@ tasks:
     actions:
       - description: Deploy bundle
         cmd: |
-          BUNDLE=$(ls bundle/uds-bundle-uds-lab-platform-*.tar.zst 2>/dev/null | tail -1)
+          BUNDLE=$(find bundle -maxdepth 1 -type f -name 'uds-bundle-uds-lab-platform-*.tar.zst' -print | sort | tail -1)
           [ -n "$BUNDLE" ] || { echo "ERROR: no bundle found in bundle/ — run build-bundle first"; exit 1; }
           echo "Deploying: $BUNDLE"
           uds deploy "$BUNDLE" --confirm
@@ -572,6 +579,7 @@ tasks:
       - description: Import golden PVCs
         maxTotalSeconds: 600
         cmd: |
+          # shellcheck shell=bash
           if [ "${{ .inputs.skip }}" = "1" ]; then
             echo "Skipping golden PVC import (skip=1)"
             exit 0
@@ -619,12 +627,9 @@ tasks:
       KUBEVIRT_PKG_DIR:
         description: Path to local KubeVirt package directory
         default: $HOME/src/github.com/uds-packages/kubevirt
-      CDI_PKG_DIR:
-        description: Path to local CDI operator package directory
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer
-      CDI_FLAVOR:
-        description: Locally built CDI package flavor
-        default: upstream
+      CDI_PACKAGE:
+        description: Path to prebuilt CDI Zarf package artifact
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
         default: "0"
@@ -644,7 +649,7 @@ tasks:
       - task: preflight
         with:
           kubevirt_pkg_dir: ${{ .inputs.KUBEVIRT_PKG_DIR }}
-          cdi_pkg_dir: ${{ .inputs.CDI_PKG_DIR }}
+          cdi_package: ${{ .inputs.CDI_PACKAGE }}
       - task: wipe-k3s
         with:
           run: ${{ .inputs.WIPE_CLUSTER }}
@@ -666,10 +671,9 @@ tasks:
         with:
           dir: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           rebuild: ${{ .inputs.WIPE_CLUSTER }}
-      - task: build-cdi
+      - task: stage-cdi-package
         with:
-          dir: ${{ .inputs.CDI_PKG_DIR }}
-          flavor: ${{ .inputs.CDI_FLAVOR }}
+          package: ${{ .inputs.CDI_PACKAGE }}
       - task: build-vm-images
         with:
           build: ${{ .inputs.LOCAL_VM_IMAGES }}
@@ -722,22 +726,21 @@ tasks:
             exit 0
           fi
           echo "Admin: $ADMIN_IP  Tenant: $TENANT_IP"
-          cat > hack/proxy/nginx.conf << NGINX_EOF
-          worker_processes 1;
-          events { worker_connections 1024; }
-          stream {
-              map \$ssl_preread_server_name \$backend_443 {
-                  ~*\.admin\.uds\.dev  ${ADMIN_IP}:443;
-                  default              ${TENANT_IP}:443;
-              }
-              map \$ssl_preread_server_name \$backend_80 {
-                  ~*\.admin\.uds\.dev  ${ADMIN_IP}:80;
-                  default              ${TENANT_IP}:80;
-              }
-              server { listen 443; proxy_pass \$backend_443; ssl_preread on; }
-              server { listen 80; proxy_pass \$backend_80; }
-          }
-          NGINX_EOF
+          printf '%s\n' \
+            'worker_processes 1;' \
+            'events { worker_connections 1024; }' \
+            'stream {' \
+            "    map \$ssl_preread_server_name \$backend_443 {" \
+            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:443;" \
+            "        default              ${TENANT_IP}:443;" \
+            '    }' \
+            "    map \$ssl_preread_server_name \$backend_80 {" \
+            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:80;" \
+            "        default              ${TENANT_IP}:80;" \
+            '    }' \
+            '    server { listen 443; proxy_pass $backend_443; ssl_preread on; }' \
+            '    server { listen 80; proxy_pass $backend_80; }' \
+            '}' > hack/proxy/nginx.conf
           docker compose -f hack/proxy/docker-compose.yaml up -d
 
   - name: stop-proxy
@@ -763,7 +766,7 @@ tasks:
           vm_image_tag: ${{ .inputs.vm_image_tag }}
       - description: Deploy lab-platform package
         cmd: |
-          PACKAGE=$(ls zarf-package-uds-lab-platform-amd64-*.tar.zst 2>/dev/null | tail -1)
+          PACKAGE=$(find . -maxdepth 1 -type f -name 'zarf-package-uds-lab-platform-amd64-*.tar.zst' -print | sort | tail -1)
           [ -n "$PACKAGE" ] || { echo "ERROR: lab-platform package not found"; exit 1; }
           zarf package deploy "$PACKAGE" --confirm
       - task: patch-demo-routes
@@ -919,12 +922,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
-      CDI_PKG_DIR:
-        description: Path to local CDI package source
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer
-      CDI_FLAVOR:
-        description: Locally built CDI package flavor
-        default: upstream
+      CDI_PACKAGE:
+        description: Path to prebuilt CDI Zarf package artifact
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - task: clean-artifacts
         with:
@@ -938,8 +938,7 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          CDI_PKG_DIR: ${{ .inputs.CDI_PKG_DIR }}
-          CDI_FLAVOR: ${{ .inputs.CDI_FLAVOR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
       - task: patch-coredns
       - task: start-proxy
       - task: create-test-user

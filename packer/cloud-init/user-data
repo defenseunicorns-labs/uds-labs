@@ -6,7 +6,7 @@ users:
     shell: /bin/bash
     lock_passwd: true
     ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMR+p3PRpHz760ER+kcW4OKhEUTFr0AJVS1gbZypZSMp packer-build
+      - PACKER_SSH_PUBLIC_KEY
 
 ssh_pwauth: false
 

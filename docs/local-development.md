@@ -19,18 +19,17 @@ The full end-to-end environment requires:
 - Go 1.26 for Go development
 - `helm` for package validation and `golangci-lint` for `uds run lint`
 - `virtctl` for VM console and SSH access
-- Packer 1.9 or newer, `qemu-img`, `qemu-system-x86_64`, and
-  `virt-customize` when building VM images
-- Local checkouts of:
-  - `~/src/github.com/uds-packages/kubevirt`
-  - `~/src/github.com/uds-packages/containerized-data-importer`
+- Packer 1.9 or newer, `qemu-img`, and `qemu-system-x86_64` when building VM
+  images
+- Local KubeVirt package checkout: `~/src/github.com/uds-packages/kubevirt`
+- Prebuilt CDI package artifact from the separate CDI repository
 
 Override either checkout when it lives elsewhere:
 
 ```bash
 uds run preflight \
   --with kubevirt_pkg_dir=/path/to/kubevirt \
-  --with cdi_pkg_dir=/path/to/containerized-data-importer
+  --with cdi_package=/path/to/zarf-package-cdi-amd64-dev-unicorn.tar.zst
 ```
 
 The Unicorn CDI flavor also requires authentication to the Defense Unicorns
@@ -59,7 +58,8 @@ uds run --dry-run <task>
 Pass task inputs with `--with`:
 
 ```bash
-uds run dev --with WIPE_CLUSTER=0 --with CDI_FLAVOR=unicorn
+uds run dev --with WIPE_CLUSTER=0 \
+  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 ```
 
 Input names are case-sensitive.
@@ -71,7 +71,7 @@ sudo and may run long enough for an existing sudo session to expire.
 
 ```bash
 sudo -v
-uds run dev --with CDI_FLAVOR=unicorn
+uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 ```
 
 The workflow builds dependencies, creates or replaces the k3s cluster, deploys
@@ -92,9 +92,8 @@ Unicorn CDI package, and deploy image-server containers from existing local
 qcow2 files:
 
 ```bash
-GITHUB_TOKEN="$(gh auth token)" uds run dev \
-  --with CDI_PKG_DIR="$HOME/src/github.com/uds-packages/containerized-data-importer" \
-  --with CDI_FLAVOR=unicorn \
+uds run dev \
+  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst" \
   --with WIPE_CLUSTER=1 \
   --with BUILD_IMAGES=0 \
   --with LOCAL_VM_IMAGES=1
@@ -104,8 +103,8 @@ This is the nuclear option:
 
 - `WIPE_CLUSTER=1` removes the existing k3s cluster and cleans generated
   packages, bundles, image tarballs, and the Zarf temporary cache.
-- `CDI_FLAVOR=unicorn` rebuilds CDI from the selected local checkout and may
-  pull from authenticated Defense Unicorns registries.
+- `CDI_PACKAGE` selects a prebuilt CDI artifact. Build the Unicorn flavor in
+  the separate CDI repository first.
 - `BUILD_IMAGES=0` skips the hour-long Packer build. It does not create qcow2
   files.
 - `LOCAL_VM_IMAGES=1` wraps existing qcow2 files in local image-server
@@ -288,7 +287,7 @@ requires them.
 |---|---|---|
 | `clean-artifacts` | Removes built Zarf packages, bundles, image tarballs, and the Zarf temp cache | `clean=1`, `skip=0`; destructive |
 | `lint` | Runs `golangci-lint run ./...` | Requires `golangci-lint` |
-| `preflight` | Checks required tools, KVM, dependency checkouts, and package configuration | `kubevirt_pkg_dir`, `cdi_pkg_dir` |
+| `preflight` | Checks required tools, KVM, package artifacts, and package configuration | `kubevirt_pkg_dir`, `cdi_package` |
 | `validate-package-config` | Checks VM image-server and CDI import contracts | No cluster required |
 | `dry-run` | Runs tests and renders Helm and Zarf packages | No cluster required |
 
@@ -302,7 +301,7 @@ requires them.
 | `build-image` | Builds the versioned lab-platform container image | Version comes from `zarf.yaml` |
 | `push-image` | Pushes the lab-platform image to GHCR | Requires registry write access |
 | `build-kubevirt` | Builds the external KubeVirt Zarf package | `dir`, `rebuild=1`, `skip_if_exists=0` |
-| `build-cdi` | Lints, tests, builds, and stages the external CDI package | `dir`, `flavor=upstream` |
+| `stage-cdi-package` | Stages a prebuilt external CDI package for bundle creation | `package` |
 | `build-lab-package` | Builds the lab-platform Zarf package | `vm_image_tag`; defaults to package version |
 | `build-bundle` | Creates the UDS bundle under `bundle/` | Requires access to internal package dependencies |
 
@@ -346,8 +345,7 @@ requires them.
 | `SKIP_UDS_CORE` | `0` | Reuse the existing UDS Core qcow2 |
 | `SKIP_GOLDEN_PVC` | `1` | Skip the host-served qcow2 fallback |
 | `VM_IMAGE_TAG` | package version | Select the VM image-server tag |
-| `CDI_PKG_DIR` | `~/src/github.com/uds-packages/containerized-data-importer` | Select the CDI checkout |
-| `CDI_FLAVOR` | `upstream` | Select the CDI package flavor |
+| `CDI_PACKAGE` | CDI package artifact under the external checkout | Select the prebuilt CDI package |
 
 `cluster-up` accepts the same inputs plus:
 

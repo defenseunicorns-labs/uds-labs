@@ -46,19 +46,7 @@ every user an isolated copy of the full disk image.
 - `uds`, `zarf`, `kubectl`, `docker`, `jq`, `ip`, `curl`
 - [virtctl](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) (for VM console/SSH access)
 - KubeVirt package repo at `~/src/github.com/uds-packages/kubevirt`
-- Containerized Data Importer package repo at
-  `~/src/github.com/uds-packages/containerized-data-importer`. Until the stacked
-  Unicorn flavor PR merges, check out
-  `feat/add-unicorn-flavor-update-dependencies`:
-
-  ```bash
-  git clone git@github.com:uds-packages/containerized-data-importer.git \
-    ~/src/github.com/uds-packages/containerized-data-importer
-  git -C ~/src/github.com/uds-packages/containerized-data-importer switch \
-    feat/add-unicorn-flavor-update-dependencies
-  ```
-
-  `CDI_PKG_DIR` can override this default checkout location.
+- A prebuilt CDI Zarf package artifact from the separate CDI repository.
 
 **First-time only:**
 - Internet access (pulls Ubuntu cloud image, packages, UDS Core bundle)
@@ -68,12 +56,12 @@ every user an isolated copy of the full disk image.
 ### Full e2e from scratch
 
 ```bash
-uds run dev --with CDI_FLAVOR=unicorn
+uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 ```
 
 This will:
 1. Generate a packer SSH keypair (if missing)
-2. Build and stage the local unicorn CDI package
+2. Consume the prebuilt CDI package artifact
 3. Wipe and reinstall k3s (MetalLB + KubeVirt + CDI + UDS Core)
 4. Build and deploy the lab-platform Docker image
 5. Deploy the versioned VM-image package from the UDS Army registry
@@ -167,7 +155,7 @@ Common workflows:
 
 ```bash
 uds run dry-run                      # tests and package rendering; no cluster
-uds run dev --with CDI_FLAVOR=unicorn
+uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 uds run dev --with WIPE_CLUSTER=0    # preserve k3s
 uds run redeploy                     # fastest deployed-code iteration
 uds run smoke-test
@@ -318,7 +306,7 @@ vm/             # user-data.sh.gotmpl — cloud-init for lab VMs
 scenarios/      # lab scenario definitions
 
 ~/src/github.com/uds-packages/
-  containerized-data-importer/ # External CDI package checkout used by dev
+  containerized-data-importer/ # External CDI package source and artifacts
 ```
 
 ### Release process

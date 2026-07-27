@@ -6,7 +6,6 @@
 # Prerequisites:
 #   - /dev/kvm available (AMD-V or Intel VT-x)
 #   - packer >= 1.9, qemu-system-x86_64, qemu-img
-#   - virt-customize (libguestfs-tools) — strips cloud-init.disabled after build
 #   - 80+ GB free disk space in packer/output/
 #   - Internet access (pulls Ubuntu cloud image + packages)
 #
@@ -31,19 +30,7 @@ ls /dev/kvm &>/dev/null                   || die "/dev/kvm not found — KVM req
 command -v packer             &>/dev/null || die "packer not found"
 command -v qemu-img           &>/dev/null || die "qemu-img not found (install qemu-utils)"
 command -v qemu-system-x86_64 &>/dev/null || die "qemu-system-x86_64 not found"
-command -v virt-customize     &>/dev/null || die "virt-customize not found (Arch: pacman -S guestfs-tools | Debian/Ubuntu: apt install guestfs-tools)"
-
 mkdir -p output
-
-# Strip /etc/cloud/cloud-init.disabled so cloned VMs run cloud-init on first boot.
-# The packer user-data now does 'cloud-init clean' instead of disabling it, but
-# run this as belt-and-suspenders for any images built before that fix.
-fix_cloud_init() {
-  local img="$1"
-  log "Stripping cloud-init.disabled from $img..."
-  virt-customize -a "$img" --run-command 'rm -f /etc/cloud/cloud-init.disabled' \
-    || warn "virt-customize failed on $img — manually verify cloud-init is enabled"
-}
 
 # Compact a qcow2 by rewriting it without zero blocks (no compression).
 # fstrim inside the VM zeros free blocks; this step skips them in the output.
@@ -63,14 +50,12 @@ if [ "${SKIP_BASE:-0}" != "1" ]; then
   packer init lab-base.qemu.pkr.hcl
   packer build -force lab-base.qemu.pkr.hcl
   BASE_IMAGE="output/base/lab-base.qcow2"
-  fix_cloud_init "$BASE_IMAGE"
   compact_qcow2 "$BASE_IMAGE"
   log "Base image: $BASE_IMAGE ($(du -sh "$BASE_IMAGE" | cut -f1))"
 else
   BASE_IMAGE="${BASE_IMAGE:-output/base/lab-base.qcow2}"
   [ -f "$BASE_IMAGE" ] || die "SKIP_BASE=1 but BASE_IMAGE not found: $BASE_IMAGE"
   warn "Skipping base build — using $BASE_IMAGE"
-  fix_cloud_init "$BASE_IMAGE"
 fi
 
 # ── Stage 2: UDS Core playground ─────────────────────────────────────────────
@@ -81,7 +66,6 @@ if [ "${SKIP_UDS_CORE:-0}" != "1" ]; then
     -var "base_image=${BASE_IMAGE}" \
     lab-playground-uds-core.qemu.pkr.hcl
   UDS_CORE_IMAGE="output/uds-core/lab-playground-uds-core.qcow2"
-  fix_cloud_init "$UDS_CORE_IMAGE"
   # No compact_qcow2 here — the uds-core image contains a stopped k3d cluster
   # whose containers must survive in Docker storage intact. Rewriting the qcow2
   # is safe in principle but unnecessary risk given prior overlay2 issues.

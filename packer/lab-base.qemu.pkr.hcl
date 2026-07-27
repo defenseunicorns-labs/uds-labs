@@ -31,14 +31,23 @@ source "qemu" "lab-base" {
   cpu_model    = "host"
   net_device   = "virtio-net-pci"
 
-  # cidata CD-ROM provides the NoCloud cloud-init datasource.
-  cd_files = ["./cloud-init/user-data", "./cloud-init/meta-data"]
+  # cidata CD-ROM provides the NoCloud cloud-init datasource. Inject the
+  # public half of the local build key; the ignored keypair may differ per
+  # checkout/machine.
+  cd_content = {
+    "user-data" = replace(
+      file("${path.root}/cloud-init/user-data"),
+      "PACKER_SSH_PUBLIC_KEY",
+      chomp(file("${path.root}/packer-key.pub")),
+    )
+    "meta-data" = file("${path.root}/cloud-init/meta-data")
+  }
   cd_label = "cidata"
 
-  communicator          = "ssh"
-  ssh_username          = "packer"
-  ssh_private_key_file  = "./packer-key"
-  ssh_timeout           = "10m"
+  communicator         = "ssh"
+  ssh_username         = "packer"
+  ssh_private_key_file = "./packer-key"
+  ssh_timeout          = "10m"
 
   vnc_password     = "packer"
   headless         = true
@@ -51,7 +60,7 @@ build {
   sources = ["source.qemu.lab-base"]
 
   provisioner "shell" {
-    script = "scripts/base.sh"
+    script          = "scripts/base.sh"
     execute_command = "sudo bash '{{ .Path }}'"
   }
 

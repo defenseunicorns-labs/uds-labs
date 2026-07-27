@@ -1,0 +1,42 @@
+extends: default
+
+yaml-files:
+  - "**/*.y*ml"
+  - ".yamllint"
+
+ignore:
+  - "chart/templates/**"
+
+rules:
+  anchors: enable
+  braces: enable
+  brackets: enable
+  colons: enable
+  commas: enable
+  comments:
+    level: warning
+  comments-indentation:
+    level: warning
+  # Individual Kubernetes/Zarf files may be consumed as YAML streams.
+  document-end: disable
+  document-start:
+    level: warning
+  empty-lines: enable
+  # Empty values and numeric-looking values are valid in deployment manifests.
+  empty-values: disable
+  float-values: disable
+  hyphens: enable
+  indentation: enable
+  key-duplicates: enable
+  key-ordering: disable
+  # Commands, URLs, and user-facing descriptions are often intentionally long.
+  line-length: disable
+  new-line-at-end-of-file: enable
+  new-lines: enable
+  octal-values: disable
+  quoted-strings:
+    required: false
+    quote-type: double
+  trailing-spaces: enable
+  truthy:
+    level: warning
