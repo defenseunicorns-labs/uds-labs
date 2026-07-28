@@ -16,6 +16,5 @@ exec uds run cluster-up \
   --with WIPE_CLUSTER="${WIPE_CLUSTER:-1}" \
   --with SKIP_GOLDEN_PVC="${SKIP_GOLDEN_PVC:-1}" \
   --with LOCAL_VM_IMAGES="${LOCAL_VM_IMAGES:-0}" \
-  --with CDI_FLAVOR="${CDI_FLAVOR:-unicorn}" \
-  --with CDI_PKG_DIR="${CDI_PKG_DIR:-../cdi-operator}" \
+  --with CDI_PACKAGE="${CDI_PACKAGE:-$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst}" \
   --with KUBEVIRT_PKG_DIR="${KUBEVIRT_PKG_DIR:-$HOME/src/github.com/uds-packages/kubevirt}"

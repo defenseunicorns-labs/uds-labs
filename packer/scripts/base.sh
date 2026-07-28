@@ -5,6 +5,10 @@ set -euo pipefail
 
 export HOME=/root
 export DEBIAN_FRONTEND=noninteractive
+# Do not restart the host's services while apt mutates the image. The default
+# automatic restart set includes ssh, journald, networkd, and udev, which can
+# deadlock an image provisioner. Services start normally on the first boot.
+export NEEDRESTART_MODE=l
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 

@@ -77,7 +77,7 @@ packages:
                 - uds-lab-vms
 
   - name: cdi
-    path: ../
+    path: cdi
     ref: dev
     overrides:
       cdi:

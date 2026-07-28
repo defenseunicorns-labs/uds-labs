@@ -100,4 +100,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "v${VERSION}" \
             --generate-notes \
-            zarf-package-uds-lab-platform-amd64-${VERSION}.tar.zst
+            "zarf-package-uds-lab-platform-amd64-${VERSION}.tar.zst"

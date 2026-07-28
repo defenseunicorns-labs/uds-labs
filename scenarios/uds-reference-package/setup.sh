@@ -67,9 +67,11 @@ log "Cluster up — lab terminal ready."
   log "Bundle patch applied."
 
   log "Pre-building Zarf package (warms image cache)..."
-  uds zarf package create . --confirm --no-progress \
-    >> /var/log/lab-setup/uds-setup.log 2>&1 && \
-    touch /var/log/lab-setup/zarf-prebuild-done && \
-    log "Zarf pre-build complete." || \
+  if uds zarf package create . --confirm --no-progress \
+    >> /var/log/lab-setup/uds-setup.log 2>&1; then
+    touch /var/log/lab-setup/zarf-prebuild-done
+    log "Zarf pre-build complete."
+  else
     log "Zarf pre-build failed — user will build fresh in step 4."
+  fi
 } &
