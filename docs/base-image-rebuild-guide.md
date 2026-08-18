@@ -58,4 +58,4 @@ Rebuilding a layer requires rebuilding all downstream layers too. Base rebuilds 
 
 ## Current known rebuild-required changes
 
-- `packer/scripts/base.sh`: removed `-noxfixes` from x11vnc to enable clipboard sync (see [issue #1](https://github.com/enxoco/uds-lab-platform/issues/1))
+- `packer/scripts/base.sh`: removed `-noxfixes` from x11vnc to enable clipboard sync (see [issue #1](https://github.com/defenseunicorns-labs/uds-labs/issues/1))

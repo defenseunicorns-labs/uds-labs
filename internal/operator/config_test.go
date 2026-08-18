@@ -3,7 +3,7 @@ package operator
 import (
 	"testing"
 
-	"github.com/enxoco/uds-lab-platform/internal/sizing"
+	"github.com/defenseunicorns-labs/uds-labs/internal/sizing"
 )
 
 func TestParseAndSizeOverrides(t *testing.T) {
@@ -19,8 +19,8 @@ sizes:
 goldenPVCs:
   base: golden-base
   uds-core: golden-uds-core
-goldenPVCNamespace: uds-lab-vms
-goldenPVCDiskSize: "80Gi"
+goldenPVCNamespace: uds-labs-vms
+goldenPVCDiskSize: "40Gi"
 `)
 	c, err := parse(data)
 	if err != nil {

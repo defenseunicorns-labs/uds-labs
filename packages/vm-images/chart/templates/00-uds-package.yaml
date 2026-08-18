@@ -1,0 +1,34 @@
+{{- if .Values.imageServers.enabled }}
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: uds-labs-vm-images
+  namespace: uds-labs-vms
+spec:
+  network:
+    allow:
+      - direction: Egress
+        selector: {cdi.kubevirt.io: importer}
+        remoteNamespace: uds-labs-vms
+        remoteSelector: {app.kubernetes.io/part-of: uds-labs-vm-images}
+        port: 8080
+        description: Golden image importer to VM image servers
+      - direction: Ingress
+        selector: {app.kubernetes.io/part-of: uds-labs-vm-images}
+        remoteNamespace: uds-labs-vms
+        remoteSelector: {cdi.kubevirt.io: importer}
+        port: 8080
+        description: VM image servers from golden image importers
+      - direction: Egress
+        selector: {cdi.kubevirt.io: cdi-clone-source}
+        remoteNamespace: uds-labs-vms
+        remoteSelector: {cdi.kubevirt.io: cdi-upload-server}
+        port: 8443
+        description: CDI clone source to session upload server
+      - direction: Ingress
+        selector: {cdi.kubevirt.io: cdi-upload-server}
+        remoteNamespace: uds-labs-vms
+        remoteSelector: {cdi.kubevirt.io: cdi-clone-source}
+        port: 8443
+        description: Session upload server from CDI clone source
+{{- end }}

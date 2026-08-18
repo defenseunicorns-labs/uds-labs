@@ -20,11 +20,11 @@ import (
 	"strings"
 	"time"
 
-	labplatform "github.com/enxoco/uds-lab-platform"
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
-	"github.com/enxoco/uds-lab-platform/internal/proxy"
-	"github.com/enxoco/uds-lab-platform/internal/scenario"
-	"github.com/enxoco/uds-lab-platform/internal/session"
+	labplatform "github.com/defenseunicorns-labs/uds-labs"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/proxy"
+	"github.com/defenseunicorns-labs/uds-labs/internal/scenario"
+	"github.com/defenseunicorns-labs/uds-labs/internal/session"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -60,8 +60,8 @@ type server struct {
 }
 
 const (
-	maxBodyBytes           = 1 << 20 // 1 MiB — cap on forwarded VM request bodies
-	maxDemoTokenExpiryHours = 8760   // 1 year
+	maxBodyBytes            = 1 << 20 // 1 MiB — cap on forwarded VM request bodies
+	maxDemoTokenExpiryHours = 8760    // 1 year
 )
 
 // demoTokenRecord is one entry in the lab-demo-tokens ConfigMap.
@@ -83,7 +83,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("SESSION_TTL_MINUTES is not a valid integer: %v", err)
 	}
-	vmNamespace := envOr("VM_NAMESPACE", "uds-lab-vms")
+	maxActiveSessions, err := strconv.Atoi(envOr("MAX_ACTIVE_SESSIONS", "1"))
+	if err != nil || maxActiveSessions < 1 {
+		log.Fatalf("MAX_ACTIVE_SESSIONS must be a positive integer")
+	}
+	vmNamespace := envOr("VM_NAMESPACE", "uds-labs-vms")
 	serverNS := envOr("SERVER_NAMESPACE", vmNamespace)
 	port := envOr("PORT", "8080")
 
@@ -143,7 +147,7 @@ func main() {
 		log.Fatalf("build k8s client: %v", err)
 	}
 
-	mgr := session.NewManager(k8s, vmNamespace, time.Duration(ttlMinutes)*time.Minute, scenariosFS)
+	mgr := session.NewManager(k8s, vmNamespace, time.Duration(ttlMinutes)*time.Minute, scenariosFS, maxActiveSessions)
 
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
@@ -210,7 +214,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, mux)) // nosemgrep: go.lang.security.audit.net.use-tls.use-tls -- TLS terminated by Istio mTLS sidecar; app-layer TLS would break the mesh
 }
 
-
 // ── Admin handlers ────────────────────────────────────────────────────────────
 
 func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
@@ -270,21 +273,21 @@ func (s *server) adminCSM(w http.ResponseWriter, r *http.Request) {
 		Active    bool   `json:"active"`
 	}
 	type csmCustomer struct {
-		ID         string      `json:"id"`
-		Name       string      `json:"name"`
-		Scenario   string      `json:"scenario"`
-		CSE        string      `json:"cse"`
-		UserCount  int         `json:"user_count"`
-		Users      []csmUser   `json:"users"`
-		StepTitles []string    `json:"step_titles"`
-		Steps      []csmStep   `json:"steps"`
+		ID         string    `json:"id"`
+		Name       string    `json:"name"`
+		Scenario   string    `json:"scenario"`
+		CSE        string    `json:"cse"`
+		UserCount  int       `json:"user_count"`
+		Users      []csmUser `json:"users"`
+		StepTitles []string  `json:"step_titles"`
+		Steps      []csmStep `json:"steps"`
 	}
 
 	type groupKey struct{ domain, scenario string }
 	type group struct {
-		domain  string
-		best    *session.Session
-		users   []csmUser
+		domain string
+		best   *session.Session
+		users  []csmUser
 	}
 
 	cutoff := time.Now().Add(-30 * 24 * time.Hour)
@@ -457,8 +460,12 @@ func (s *server) createSession(w http.ResponseWriter, r *http.Request) {
 	cid := clientID(w, r)
 	sess, err := s.mgr.Create(r.Context(), cid, req.Scenario, userEmail)
 	if err != nil {
-		if err == session.ErrSessionExists {
+		if errors.Is(err, session.ErrSessionExists) {
 			jsonError(w, "you already have an active lab session", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, session.ErrCapacityReached) {
+			jsonError(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		log.Printf("create session: %v", err)
@@ -993,8 +1000,8 @@ func (s *server) startDemoSession(w http.ResponseWriter, r *http.Request) {
 	cid := demoClientID(claims.TokenID, req.Email)
 
 	sess, err := s.mgr.Create(r.Context(), cid, claims.ScenarioID, req.Email, map[string]string{
-		"lab.uds.dev/session-type": "demo",
-		"lab.uds.dev/ae-token":     claims.TokenID,
+		"labs.uds.dev/session-type": "demo",
+		"labs.uds.dev/ae-token":     claims.TokenID,
 	})
 	if err != nil {
 		if errors.Is(err, session.ErrSessionExists) {
@@ -1005,6 +1012,10 @@ func (s *server) startDemoSession(w http.ResponseWriter, r *http.Request) {
 			}
 			s.setDemoCookie(w, r, cid)
 			jsonOK(w, map[string]string{"redirect_url": "/lab.html?session=" + existing.ID + "&scenario=" + existing.Scenario})
+			return
+		}
+		if errors.Is(err, session.ErrCapacityReached) {
+			jsonError(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		log.Printf("create demo session: %v", err)
@@ -1055,13 +1066,13 @@ func (s *server) listDemoTokens(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type tokenView struct {
-		TokenID        string    `json:"token_id"`
-		ScenarioID     string    `json:"scenario_id"`
-		ShareURL       string    `json:"share_url"`
-		ExpiresAt      time.Time `json:"expires_at"`
-		ProspectEmail  *string   `json:"prospect_email"`
-		StepsCompleted int       `json:"steps_completed"`
-		TotalSteps     int       `json:"total_steps"`
+		TokenID        string     `json:"token_id"`
+		ScenarioID     string     `json:"scenario_id"`
+		ShareURL       string     `json:"share_url"`
+		ExpiresAt      time.Time  `json:"expires_at"`
+		ProspectEmail  *string    `json:"prospect_email"`
+		StepsCompleted int        `json:"steps_completed"`
+		TotalSteps     int        `json:"total_steps"`
 		LastActive     *time.Time `json:"last_active"`
 	}
 

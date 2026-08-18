@@ -8,8 +8,9 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 
-	"github.com/enxoco/uds-lab-platform/internal/sizing"
+	"github.com/defenseunicorns-labs/uds-labs/internal/sizing"
 )
 
 // Config is the operator ConfigMap, mounted as a file (path in OPERATOR_CONFIG).
@@ -21,6 +22,16 @@ type Config struct {
 	GoldenPVCs         map[string]string    `yaml:"goldenPVCs"`         // tier → PVC name
 	GoldenPVCNamespace string               `yaml:"goldenPVCNamespace"` // defaults to VM namespace
 	GoldenPVCDiskSize  string               `yaml:"goldenPVCDiskSize"`  // usable clone size requested through CDI storage API
+	StorageClass       string               `yaml:"storageClass"`
+	VMIPlacement       Placement            `yaml:"vmiPlacement"`
+	BlockedEgressCIDRs []string             `yaml:"blockedEgressCIDRs"`
+}
+
+// Placement is the portable Kubernetes scheduling contract for Lab VMIs.
+type Placement struct {
+	NodeSelector map[string]string   `yaml:"nodeSelector"`
+	Affinity     *corev1.Affinity    `yaml:"affinity"`
+	Tolerations  []corev1.Toleration `yaml:"tolerations"`
 }
 
 type sizeEntry struct {

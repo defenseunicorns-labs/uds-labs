@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"net"
 	"text/template" // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template -- renders cloud-init YAML/shell, not HTML
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,26 +26,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	kvv1 "kubevirt.io/api/core/v1"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
-	"github.com/enxoco/uds-lab-platform/internal/cloudinit"
-	"github.com/enxoco/uds-lab-platform/internal/provider"
-	"github.com/enxoco/uds-lab-platform/internal/scenario"
-	"github.com/enxoco/uds-lab-platform/internal/sizing"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/cloudinit"
+	"github.com/defenseunicorns-labs/uds-labs/internal/provider"
+	"github.com/defenseunicorns-labs/uds-labs/internal/scenario"
+	"github.com/defenseunicorns-labs/uds-labs/internal/sizing"
 )
 
 const (
 	// sessionLabel is set on the VMI (and inherited by the virt-launcher pod) so
 	// the Service and NetworkPolicy can select it.
-	sessionLabel = "lab.uds.dev/session"
-	// KubeVirt bridge-mode launcher pods must stay out of Istio ambient capture;
-	// ztunnel cannot forward intercepted service traffic through the pod bridge
-	// to the guest VM. Pod-level intent overrides the ambient namespace label.
+	sessionLabel = "labs.uds.dev/session"
+	// KubeVirt launcher pods must stay out of Istio ambient capture; ztunnel
+	// cannot forward intercepted Service traffic through KubeVirt masquerade to
+	// the guest VM. Pod-level intent overrides the ambient namespace label.
 	istioDataplaneModeLabel = "istio.io/dataplane-mode"
 	istioDataplaneModeNone  = "none"
+	workloadLabel           = "labs.uds.dev/workload"
+	workloadLabelVMI        = "vmi"
 
 	// In-VM ports (unchanged from the Hetzner VM software).
 	portInject = 7680 // lab-inject.py (cmd/verify/navigate/services)
@@ -53,13 +55,13 @@ const (
 	portVNC    = 6080 // noVNC/websockify
 
 	// defaultDiskSize is the fallback clone PVC size when GoldenPVCDiskSize is empty.
-	defaultDiskSize = "80Gi"
+	defaultDiskSize = "40Gi"
 )
 
 // Config wires the provider to the cluster and to scenario content.
 type Config struct {
 	Client client.Client
-	// Namespace holds all VMIs/Services/NetworkPolicies (uds-lab-vms).
+	// Namespace holds all VMIs/Services/NetworkPolicies (uds-labs-vms).
 	Namespace string
 	// ServerNamespace is allowed ingress to the VM Services (the platform server).
 	ServerNamespace string
@@ -82,6 +84,15 @@ type Config struct {
 
 	// StorageClass for the cloned DataVolume PVC. Empty uses the cluster default.
 	StorageClass string
+
+	// Placement applies portable scheduling constraints to virt-launcher Pods.
+	NodeSelector map[string]string
+	Affinity     *corev1.Affinity
+	Tolerations  []corev1.Toleration
+
+	// BlockedEgressCIDRs are excluded from otherwise permitted internet egress.
+	// Cluster DNS is allowed separately.
+	BlockedEgressCIDRs []string
 }
 
 var _ provider.Provider = (*Provider)(nil)
@@ -173,8 +184,8 @@ func (p *Provider) Reconcile(ctx context.Context, ls *labv1.LabSession) (provide
 }
 
 // TeardownCompute deletes the VMI, Service, and NetworkPolicy but leaves the
-// DataVolume PVC intact so a VolumeSnapshot can be taken.
-func (p *Provider) TeardownCompute(ctx context.Context, ls *labv1.LabSession) error {
+// DataVolume/PVC intact. It reports stopped only after the VMI is absent.
+func (p *Provider) TeardownCompute(ctx context.Context, ls *labv1.LabSession) (bool, error) {
 	name := resourceName(ls)
 	objs := []client.Object{
 		&kvv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name}},
@@ -183,14 +194,22 @@ func (p *Provider) TeardownCompute(ctx context.Context, ls *labv1.LabSession) er
 	}
 	for _, o := range objs {
 		if err := p.cfg.Client.Delete(ctx, o); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("delete %T %s: %w", o, name, err)
+			return false, fmt.Errorf("delete %T %s: %w", o, name, err)
 		}
 	}
-	return nil
+	vmi := &kvv1.VirtualMachineInstance{}
+	err := p.cfg.Client.Get(ctx, client.ObjectKey{Namespace: p.cfg.Namespace, Name: name}, vmi)
+	if apierrors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("confirm vmi %s stopped: %w", name, err)
+	}
+	return false, nil
 }
 
-// TeardownDisk deletes the DataVolume (and therefore its underlying PVC).
-func (p *Provider) TeardownDisk(ctx context.Context, ls *labv1.LabSession) error {
+// teardownDisk deletes the DataVolume (and therefore its underlying PVC).
+func (p *Provider) teardownDisk(ctx context.Context, ls *labv1.LabSession) error {
 	name := resourceName(ls)
 	dv := &cdiv1.DataVolume{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name}}
 	if err := p.cfg.Client.Delete(ctx, dv); err != nil && !apierrors.IsNotFound(err) {
@@ -199,67 +218,12 @@ func (p *Provider) TeardownDisk(ctx context.Context, ls *labv1.LabSession) error
 	return nil
 }
 
-// Teardown deletes all session objects: compute, disk, and any snapshot.
+// Teardown deletes all session objects, including the retained disk.
 func (p *Provider) Teardown(ctx context.Context, ls *labv1.LabSession) error {
-	if err := p.TeardownCompute(ctx, ls); err != nil {
+	if _, err := p.TeardownCompute(ctx, ls); err != nil {
 		return err
 	}
-	if err := p.TeardownDisk(ctx, ls); err != nil {
-		return err
-	}
-	if ls.Status.SnapshotName != "" {
-		snap := &snapshotv1.VolumeSnapshot{ObjectMeta: metav1.ObjectMeta{
-			Namespace: p.cfg.Namespace,
-			Name:      ls.Status.SnapshotName,
-		}}
-		if err := p.cfg.Client.Delete(ctx, snap); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("delete snapshot %s: %w", ls.Status.SnapshotName, err)
-		}
-	}
-	return nil
-}
-
-// Snapshot creates a VolumeSnapshot of the session's disk PVC and returns its
-// name. The snapshot is not immediately ready — poll SnapshotReady.
-func (p *Provider) Snapshot(ctx context.Context, ls *labv1.LabSession) (string, error) {
-	dvName := resourceName(ls)
-	snapName := dvName + "-snap"
-	vscName := "longhorn-snapshot-vsc"
-
-	snap := &snapshotv1.VolumeSnapshot{
-		ObjectMeta: metav1.ObjectMeta{Name: snapName, Namespace: p.cfg.Namespace},
-		Spec: snapshotv1.VolumeSnapshotSpec{
-			Source: snapshotv1.VolumeSnapshotSource{
-				PersistentVolumeClaimName: ptr(dvName),
-			},
-			VolumeSnapshotClassName: ptr(vscName),
-		},
-	}
-	if err := p.cfg.Client.Create(ctx, snap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return "", fmt.Errorf("create snapshot %s: %w", snapName, err)
-	}
-	return snapName, nil
-}
-
-// SnapshotReady returns true when the named VolumeSnapshot reports ReadyToUse.
-func (p *Provider) SnapshotReady(ctx context.Context, snapName string) (bool, error) {
-	snap := &snapshotv1.VolumeSnapshot{}
-	if err := p.cfg.Client.Get(ctx, client.ObjectKey{Namespace: p.cfg.Namespace, Name: snapName}, snap); err != nil {
-		return false, err
-	}
-	return snap.Status != nil && snap.Status.ReadyToUse != nil && *snap.Status.ReadyToUse, nil
-}
-
-// DeleteSnapshot deletes the named VolumeSnapshot. IsNotFound is treated as success.
-func (p *Provider) DeleteSnapshot(ctx context.Context, snapName string) error {
-	snap := &snapshotv1.VolumeSnapshot{ObjectMeta: metav1.ObjectMeta{
-		Namespace: p.cfg.Namespace,
-		Name:      snapName,
-	}}
-	if err := p.cfg.Client.Delete(ctx, snap); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("delete snapshot %s: %w", snapName, err)
-	}
-	return nil
+	return p.teardownDisk(ctx, ls)
 }
 
 // goldenPVCForScenario maps a scenario to its golden PVC name.
@@ -307,23 +271,13 @@ func (p *Provider) ensureDataVolume(ctx context.Context, ls *labv1.LabSession, n
 		srcNamespace = p.cfg.Namespace
 	}
 
-	var source *cdiv1.DataVolumeSource
-	if ls.Status.SnapshotName != "" {
-		// Resume from snapshot — restores exact disk state at pause time.
-		source = &cdiv1.DataVolumeSource{
-			Snapshot: &cdiv1.DataVolumeSourceSnapshot{
-				Namespace: p.cfg.Namespace,
-				Name:      ls.Status.SnapshotName,
-			},
-		}
-	} else {
-		// Fresh session — clone from golden PVC.
-		source = &cdiv1.DataVolumeSource{
-			PVC: &cdiv1.DataVolumeSourcePVC{
-				Namespace: srcNamespace,
-				Name:      goldenPVCName,
-			},
-		}
+	// Fresh sessions clone the golden PVC. On resume CreateOrUpdate observes the
+	// existing DataVolume and leaves its immutable source and storage unchanged.
+	source := &cdiv1.DataVolumeSource{
+		PVC: &cdiv1.DataVolumeSourcePVC{
+			Namespace: srcNamespace,
+			Name:      goldenPVCName,
+		},
 	}
 
 	dv := &cdiv1.DataVolume{
@@ -338,10 +292,13 @@ func (p *Provider) ensureDataVolume(ctx context.Context, ls *labv1.LabSession, n
 				Source: source,
 				// Use CDI's storage API so its webhook applies the configured
 				// filesystem overhead. The golden imports use the same API; using
-				// the direct PVC API here would make an 80Gi clone smaller than
-				// the overhead-inflated 80Gi source PVC.
+				// the direct PVC API here would make an 40Gi clone smaller than
+				// the overhead-inflated 40Gi source PVC.
 				Storage: &cdiv1.StorageSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					// Rootless CDI raw-block operations require CRI device ownership
+					// support that managed AKS containerd does not provide.
+					VolumeMode: ptr(corev1.PersistentVolumeFilesystem),
 					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{corev1.ResourceStorage: diskQ},
 					},
@@ -373,11 +330,12 @@ func (p *Provider) ensureVMI(ctx context.Context, ls *labv1.LabSession, name str
 		return fmt.Errorf("parse memory %q: %w", spec.Memory, err)
 	}
 
-	vmiLabels := make(map[string]string, len(labels)+1)
+	vmiLabels := make(map[string]string, len(labels)+2)
 	for key, value := range labels {
 		vmiLabels[key] = value
 	}
 	vmiLabels[istioDataplaneModeLabel] = istioDataplaneModeNone
+	vmiLabels[workloadLabel] = workloadLabelVMI
 
 	vmi := &kvv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: p.cfg.Namespace, Labels: vmiLabels},
@@ -387,6 +345,9 @@ func (p *Provider) ensureVMI(ctx context.Context, ls *labv1.LabSession, name str
 		if vmi.CreationTimestamp.IsZero() {
 			vmi.Labels = vmiLabels
 			vmi.Spec = kvv1.VirtualMachineInstanceSpec{
+				NodeSelector: copyStringMap(p.cfg.NodeSelector),
+				Affinity:     withLabAntiAffinity(p.cfg.Affinity),
+				Tolerations:  append([]corev1.Toleration(nil), p.cfg.Tolerations...),
 				Domain: kvv1.DomainSpec{
 					Resources: kvv1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -395,12 +356,20 @@ func (p *Provider) ensureVMI(ctx context.Context, ls *labv1.LabSession, name str
 						},
 					},
 					Devices: kvv1.Devices{
+						Interfaces: []kvv1.Interface{{
+							Name:                   "default",
+							InterfaceBindingMethod: kvv1.InterfaceBindingMethod{Masquerade: &kvv1.InterfaceMasquerade{}},
+						}},
 						Disks: []kvv1.Disk{
 							{Name: "rootdisk", DiskDevice: kvv1.DiskDevice{Disk: &kvv1.DiskTarget{Bus: kvv1.DiskBusVirtio}}},
 							{Name: "cloudinitdisk", DiskDevice: kvv1.DiskDevice{Disk: &kvv1.DiskTarget{Bus: kvv1.DiskBusVirtio}}},
 						},
 					},
 				},
+				Networks: []kvv1.Network{{
+					Name:          "default",
+					NetworkSource: kvv1.NetworkSource{Pod: &kvv1.PodNetwork{}},
+				}},
 				Volumes: []kvv1.Volume{
 					{Name: "rootdisk", VolumeSource: kvv1.VolumeSource{DataVolume: &kvv1.DataVolumeSource{Name: name}}},
 					{Name: "cloudinitdisk", VolumeSource: kvv1.VolumeSource{CloudInitNoCloud: &kvv1.CloudInitNoCloudSource{UserDataSecretRef: &corev1.LocalObjectReference{Name: name}}}},
@@ -447,6 +416,18 @@ func (p *Provider) ensureNetworkPolicy(ctx context.Context, ls *labv1.LabSession
 		ingressPorts = append(ingressPorts, netv1.NetworkPolicyPort{Protocol: &tcp, Port: ptr(intstr.FromInt(portVNC))})
 	}
 
+	blocked := make([]string, 0, len(p.cfg.BlockedEgressCIDRs))
+	for _, cidr := range p.cfg.BlockedEgressCIDRs {
+		ip, _, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("invalid blocked egress CIDR %q: %w", cidr, err)
+		}
+		if ip.To4() == nil {
+			return fmt.Errorf("blocked egress CIDR %q is IPv6; IPv6 internet egress is not enabled", cidr)
+		}
+		blocked = append(blocked, cidr)
+	}
+
 	np := &netv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: p.cfg.Namespace, Labels: labels}}
 	_, err := controllerutil.CreateOrUpdate(ctx, p.cfg.Client, np, func() error {
 		np.Labels = labels
@@ -463,22 +444,55 @@ func (p *Provider) ensureNetworkPolicy(ctx context.Context, ls *labv1.LabSession
 				}},
 				Ports: ingressPorts,
 			}},
-			// Egress: DNS + unrestricted internet for lab VM workloads.
-			// VMs run arbitrary student/exercise code that installs packages,
-			// hits APIs, and runs k3d clusters — full outbound is intentional.
+			// Egress: cluster DNS plus public IPv4 internet, excluding configured
+			// cluster, internal, link-local, metadata, and platform ranges.
 			Egress: []netv1.NetworkPolicyEgressRule{
 				{
+					// Permit DNS to the resolver supplied to the guest by DHCP. A
+					// namespace/pod selector is not portable through KubeVirt
+					// masquerade, service DNAT, and every supported CNI implementation.
 					Ports: []netv1.NetworkPolicyPort{
 						{Protocol: &udp, Port: &dns},
 						{Protocol: &tcp, Port: &dns},
 					},
 				},
-				{}, // allow all other egress
+				{To: []netv1.NetworkPolicyPeer{{IPBlock: &netv1.IPBlock{CIDR: "0.0.0.0/0", Except: blocked}}}},
 			},
 		}
 		return controllerutil.SetControllerReference(ls, np, p.cfg.Client.Scheme())
 	})
 	return err
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func withLabAntiAffinity(configured *corev1.Affinity) *corev1.Affinity {
+	var affinity *corev1.Affinity
+	if configured == nil {
+		affinity = &corev1.Affinity{}
+	} else {
+		affinity = configured.DeepCopy()
+	}
+	if affinity.PodAntiAffinity == nil {
+		affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+	}
+	affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
+		affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+		corev1.PodAffinityTerm{
+			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{workloadLabel: workloadLabelVMI}},
+			TopologyKey:   corev1.LabelHostname,
+		},
+	)
+	return affinity
 }
 
 func storageClassPtr(s string) *string {

@@ -1,4 +1,4 @@
-# UDS Lab Platform — Domain Glossary
+# UDS Labs — Domain Glossary
 
 Canonical terms for this codebase. When in doubt, use these names exactly.
 
@@ -95,6 +95,9 @@ A Lab configuration (`browser: true` in scenario.yaml) that starts a full deskto
 
 ### Session Expiry
 Automatic deletion of a Session and its VM when the TTL elapses (default: 60 minutes, configurable). The UI displays a countdown timer (Lab Timeout). Users cannot extend a Session — known limitation in the current alpha. The VM is deleted immediately on expiry; any unsaved work is lost.
+
+### Paused Session
+A Session whose compute is stopped while its disk state is retained. It cannot be used until resumed, continues toward Session Expiry, and occupies the Client's active Session slot.
 
 ### Orphaned Session
 A Session that is active on the server but inaccessible to the user because the lab URL (which carries the Session ID) has been lost. The Client cookie still exists, so the server blocks new Session creation, but the catalog offers no resume path. Known limitation of the current Client identity model.

@@ -1,0 +1,30 @@
+{{- if .Values.goldenPVCs.enabled }}
+{{- $storageClass := .Values.goldenPVCs.storageClass }}
+{{- $volumeMode := .Values.goldenPVCs.volumeMode }}
+{{- range $name, $image := .Values.images }}
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: golden-{{ $name }}
+  namespace: uds-labs-vms
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+  labels:
+    labs.uds.dev/golden-pvc: "true"
+    labs.uds.dev/tier: {{ $name }}
+spec:
+  source:
+    http:
+      url: http://vm-image-{{ $name }}.uds-labs-vms.svc.cluster.local:8080/{{ $image.file }}
+  storage:
+{{- if $storageClass }}
+    storageClassName: {{ $storageClass | quote }}
+{{- end }}
+    accessModes: [ReadWriteOnce]
+    volumeMode: {{ $volumeMode }}
+    resources:
+      requests:
+        storage: {{ $image.size }}
+---
+{{- end }}
+{{- end }}

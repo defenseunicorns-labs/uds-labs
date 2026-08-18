@@ -1,0 +1,25 @@
+# Resource and development-auth overrides for standalone UDS Core Identity.
+authservice:
+  authservice:
+    replicaCount: 1
+
+keycloak:
+  keycloak:
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 3000m
+        memory: 2Gi
+    waypoint:
+      horizontalPodAutoscaler:
+        enabled: false
+      deployment:
+        requests:
+          cpu: 100m
+          memory: 64Mi
+    insecureAdminPasswordGeneration:
+      enabled: true

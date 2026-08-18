@@ -101,7 +101,7 @@ touch /var/log/lab-setup/ready
   log "UDS Core pods ready."
 
   log "Building myapp:dev Docker image (may take a few minutes — pulls python:3.11-slim)..."
-  docker build -t myapp:dev /root/myapp >> /var/log/lab-setup/uds-setup.log 2>&1
+  docker build -t myapp:dev /root/myapp --network host >> /var/log/lab-setup/uds-setup.log 2>&1
   touch /var/log/lab-setup/image-ready
   log "myapp:dev built — lab fully ready."
 } &

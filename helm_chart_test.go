@@ -9,7 +9,7 @@ import (
 
 func helmTemplate(t *testing.T, extraArgs ...string) string {
 	t.Helper()
-	args := append([]string{"template", "lab-platform", "./chart"}, extraArgs...)
+	args := append([]string{"template", "uds-labs", "./chart"}, extraArgs...)
 	out, err := exec.Command("helm", args...).Output()
 	if err != nil {
 		t.Fatalf("helm template: %v\nstderr: %s", err, extractStderr(err))
@@ -18,7 +18,7 @@ func helmTemplate(t *testing.T, extraArgs ...string) string {
 }
 
 func helmTemplateCommand(extraArgs ...string) *exec.Cmd {
-	args := append([]string{"template", "lab-platform", "./chart"}, extraArgs...)
+	args := append([]string{"template", "uds-labs", "./chart"}, extraArgs...)
 	return exec.Command("helm", args...)
 }
 
@@ -47,14 +47,17 @@ func TestHelmChart_OperatorConfigMapRendered(t *testing.T) {
 	if !strings.Contains(out, "golden-uds-core") {
 		t.Error("helm output missing golden-uds-core PVC name")
 	}
+	if !strings.Contains(out, `goldenPVCDiskSize: "40Gi"`) {
+		t.Error("default Session disk must be at least as large as the 40Gi UDS Core golden source")
+	}
 }
 
 func TestHelmChart_OperatorConfigMapHasGoldenPVCNamespace(t *testing.T) {
 	out := helmTemplate(t,
-		"--set", "goldenPVCNamespace=uds-lab-golden",
+		"--set", "goldenPVCNamespace=uds-labs-golden",
 		"--set", "goldenPVCs.base=golden-base",
 	)
-	if !strings.Contains(out, "uds-lab-golden") {
+	if !strings.Contains(out, "uds-labs-golden") {
 		t.Error("helm output missing goldenPVCNamespace")
 	}
 }
@@ -63,6 +66,25 @@ func TestHelmChart_OperatorDeploymentHasOperatorConfigEnv(t *testing.T) {
 	out := helmTemplate(t)
 	if !strings.Contains(out, "OPERATOR_CONFIG") {
 		t.Error("operator deployment missing OPERATOR_CONFIG env var")
+	}
+}
+
+func TestHelmChart_RendersPilotStorageCapacityPlacementAndAuthorization(t *testing.T) {
+	out := helmTemplate(t,
+		"--set", "storageClass=managed-csi-premium",
+		"--set", "maxActiveSessions=1",
+		"--set", "serverPlacement.nodeSelector.kubernetes\\.azure\\.com/agentpool=isv",
+		"--set", "operatorPlacement.nodeSelector.kubernetes\\.azure\\.com/agentpool=isv",
+		"--set-string", "vmiPlacement.nodeSelector.labs\\.uds\\.dev/compute=true",
+		"--set", "auth.allowedGroups[0]=/UDS Labs/Pilot",
+	)
+	for _, expected := range []string{"storageClass: \"managed-csi-premium\"", "MAX_ACTIVE_SESSIONS", "labs.uds.dev/compute", "groups:", "anyOf:", "/UDS Labs/Pilot"} {
+		if !strings.Contains(out, expected) {
+			t.Errorf("helm output missing %q", expected)
+		}
+	}
+	if strings.Contains(out, "volumesnapshots") || strings.Contains(out, "VolumeSnapshot") {
+		t.Fatal("pilot chart must not render snapshot dependencies")
 	}
 }
 
@@ -112,7 +134,7 @@ func TestHelmChart_UsesPackagedImageByDefault(t *testing.T) {
 
 func TestHelmChart_PodProviderOmitsKubeVirtResources(t *testing.T) {
 	out := helmTemplate(t, "--set", "provider=pod")
-	for _, resource := range []string{"datavolumes", "virtualmachineinstances", "volumesnapshots"} {
+	for _, resource := range []string{"datavolumes", "virtualmachineinstances"} {
 		if strings.Contains(out, resource) {
 			t.Errorf("pod provider unexpectedly rendered %s RBAC", resource)
 		}

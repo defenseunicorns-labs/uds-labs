@@ -11,7 +11,14 @@
     "provider",
     "goldenPVCs",
     "goldenPVCNamespace",
-    "goldenPVCDiskSize"
+    "goldenPVCDiskSize",
+    "maxActiveSessions",
+    "serverPlacement",
+    "operatorPlacement",
+    "vmiPlacement",
+    "storageClass",
+    "blockedEgressCIDRs",
+    "auth"
   ],
   "properties": {
     "domain": {
@@ -24,7 +31,11 @@
     },
     "imagePullPolicy": {
       "type": "string",
-      "enum": ["Always", "IfNotPresent", "Never"]
+      "enum": [
+        "Always",
+        "IfNotPresent",
+        "Never"
+      ]
     },
     "vmNamespace": {
       "type": "string",
@@ -36,7 +47,10 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["kubevirt", "pod"]
+      "enum": [
+        "kubevirt",
+        "pod"
+      ]
     },
     "goldenPVCs": {
       "type": "object",
@@ -51,6 +65,114 @@
     "goldenPVCDiskSize": {
       "type": "string",
       "minLength": 1
+    },
+    "maxActiveSessions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "serverPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeSelector",
+        "affinity",
+        "tolerations"
+      ],
+      "properties": {
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "operatorPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeSelector",
+        "affinity",
+        "tolerations"
+      ],
+      "properties": {
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "vmiPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeSelector",
+        "affinity",
+        "tolerations"
+      ],
+      "properties": {
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "storageClass": {
+      "type": "string"
+    },
+    "blockedEgressCIDRs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowedGroups"
+      ],
+      "properties": {
+        "allowedGroups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }

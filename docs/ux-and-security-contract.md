@@ -1,4 +1,4 @@
-# UDS Lab Platform: UX and Security Contract
+# UDS Labs: UX and Security Contract
 
 Status: Draft
 

@@ -8,7 +8,7 @@ packer/manifest*.json
 packer/output/
 packer/packer-key
 packer/packer-key.pub
-uds-lab-platform
+uds-labs
 laboperator
 bin/
 *.tar

@@ -1,0 +1,25 @@
+# Copy this file to bundle/uds-config.yaml and customize it for the target
+# cluster. The destination is intentionally ignored by Git.
+shared:
+  domain: uds.run
+
+variables:
+  kubevirt:
+    VM_NAMESPACES:
+      - uds-labs-vms
+    KUBEVIRT_OPERATOR_NODE_PLACEMENT: &defaultPlacement
+      nodeSelector: {}
+      affinity: {}
+      tolerations: []
+    KUBEVIRT_INFRA_NODE_PLACEMENT: *defaultPlacement
+    KUBEVIRT_WORKLOAD_NODE_PLACEMENT: *defaultPlacement
+
+  cdi:
+    OPERATOR_NODE_PLACEMENT: *defaultPlacement
+    INFRA_NODE_PLACEMENT: *defaultPlacement
+    WORKLOAD_NODE_PLACEMENT: *defaultPlacement
+    EXPOSE_UPLOAD_PROXY: false
+    ALLOW_IMPORTER_EGRESS: false
+
+  uds-labs:
+    PROVIDER: kubevirt

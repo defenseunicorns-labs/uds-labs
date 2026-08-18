@@ -1,19 +1,19 @@
-# UDS Lab Platform
+# UDS Labs
 
-Browser-based interactive lab environment for UDS and Zarf. Provisions ephemeral KubeVirt VMs on demand from golden PVC snapshots, serves browser terminals via ttyd, and requires no client installs.
+Browser-based interactive lab environment for UDS and Zarf. Provisions ephemeral KubeVirt VMs on demand from golden PVC clones, serves browser terminals via ttyd, and requires no client installs.
 
 ## Architecture
 
 ```
-Browser → Istio (TLS) → authservice (OIDC) → lab-platform server
+Browser → Istio (TLS) → authservice (OIDC) → uds-labs server
                                                     │
-                                          lab-platform operator
+                                          uds-labs operator
                                                     │
                                          ┌──────────┴──────────┐
-                                         │     uds-lab-vms ns  │
+                                         │     uds-labs-vms ns  │
                                     VMI (KubeVirt)              │
                                     DataVolume (CDI clone)      │
-                                    NodePort Service            │
+                                    Headless Service            │
                                     NetworkPolicy               │
                                          └─────────────────────┘
 
@@ -31,7 +31,8 @@ server images, and bundled by Zarf. Zarf rewrites the server Pods' normal image
 references and supplies registry credentials at deploy time. CDI imports the
 qcow2 files from stable cluster-local Services; no Zarf registry address appears
 in a DataVolume. Each LabSession then clones the appropriate golden PVC, giving
-every user an isolated copy of the full disk image.
+every user an isolated copy of the full disk image. Pausing stops VM compute while
+retaining that Session PVC; resume reattaches the same disk.
 
 | Tier | Golden PVC | Contents |
 |------|-----------|----------|
@@ -45,70 +46,75 @@ every user an isolated copy of the full disk image.
 - 80+ GB free disk for packer output
 - `uds`, `zarf`, `kubectl`, `docker`, `jq`, `ip`, `curl`
 - [virtctl](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) (for VM console/SSH access)
-- KubeVirt package repo at `~/src/github.com/uds-packages/kubevirt`
-- A prebuilt CDI Zarf package artifact from the separate CDI repository.
+- Placement-enabled KubeVirt package repo at `~/src/github.com/defenseunicorns-udm/kubevirt`
+- Placement-enabled CDI package repo at `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
 
 **First-time only:**
-- Internet access (pulls Ubuntu cloud image, packages, UDS Core bundle)
+- Internet access (pulls Ubuntu cloud image and standalone UDS Core packages)
 
 ## Quick Start
 
-### Full e2e from scratch
+### Full local E2E from scratch
+
+The local profile at [`bundle/local/uds-bundle.yaml`](bundle/local/uds-bundle.yaml)
+uses empty placement, the k3s `local-path` StorageClass, the `uds.dev` domain,
+and authentication without an environment-specific group requirement.
 
 ```bash
-uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
+sudo -v
+uds run local-e2e \
+  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
 ```
 
-This will:
-1. Generate a packer SSH keypair (if missing)
-2. Consume the prebuilt CDI package artifact
-3. Wipe and reinstall k3s (MetalLB + KubeVirt + CDI + UDS Core)
-4. Build and deploy the lab-platform Docker image
-5. Deploy the versioned VM-image package from the UDS Army registry
-6. Patch CoreDNS to route `*.uds.dev` to MetalLB gateways
-7. Create a test Keycloak user (`doug@uds.dev / unicorn123!@#UN`)
-8. Start the nginx SNI proxy for external access
+`uds run dev` is a backward-compatible alias for the same flow. It:
 
-The workflow defaults to `upstream`; the command above explicitly selects the
-local `unicorn` flavor. Building the Unicorn flavor requires authentication to
-the Defense Unicorns Chainguard registry.
+1. Wipes and recreates bare k3s by default.
+2. Installs MetalLB and initializes Zarf.
+3. Deploys the standalone UDS Core 1.10.0 base and identity Zarf packages
+   directly onto bare k3s; no k3d bundle is used.
+4. Builds/stages KubeVirt and CDI.
+5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
+6. Builds and deploys the local UDS Labs bundle.
+7. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
+8. Runs infrastructure smoke tests.
 
-### Build local VM images instead of using the published package
+After completion:
 
-```bash
-uds run dev --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
-```
-
-This is only needed when producing a new VM-image package for manual
-publication. The normal dev flow uses the package already published at
-`registry.uds-mil.us/enxo/lab-vm-images`.
-
-### Keep existing k3s, redeploy platform only
-
-```bash
-uds run dev --with WIPE_CLUSTER=0
-```
-
-To bypass the registry and use local VM-image archives while keeping the
-cluster, run:
-
-```bash
-uds run dev --with WIPE_CLUSTER=0 --with BUILD_IMAGES=0 --with LOCAL_VM_IMAGES=1
-```
-
-### Rebuild and redeploy operator only (fastest iteration)
-
-```bash
-uds run redeploy
-```
-
-After the script completes:
-- UI: `https://lab.uds.dev`
+- UI: `https://labs.uds.dev`
 - Admin: `https://keycloak.admin.uds.dev`
 - Test user: `doug@uds.dev / unicorn123!@#UN`
 
-> **Note:** If you redeploy manually (not via `dev.sh`), always re-run
-> `./scripts/patch-coredns.sh` afterward — redeploys reset the CoreDNS NodeHosts.
+Open the UI, sign in, start a Lab, and verify the terminal/browser experience.
+For an operator-only check, create a Session directly with
+`./scripts/create-test-session.sh`.
+
+### VM-image choices
+
+The default reuses a matching package already staged under `packages/vm-images/`.
+If none exists, it attempts to pull the versioned package from
+`ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images`.
+
+Build both qcow2 images and package them locally:
+
+```bash
+uds run local-e2e --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
+```
+
+Reuse existing qcow2 outputs while rebuilding the local package:
+
+```bash
+uds run local-e2e --with BUILD_IMAGES=0 --with LOCAL_VM_IMAGES=1
+```
+
+### Preserve or redeploy the local cluster
+
+```bash
+uds run local-e2e --with WIPE_CLUSTER=0
+uds run redeploy
+```
+
+With `WIPE_CLUSTER=0`, k3s and UDS Core are preserved. `redeploy` defaults to the
+local bundle profile and rebuilds only the application/package stack.
 
 ## VM Images (Packer)
 
@@ -154,10 +160,10 @@ uds run --list-all   # repository tasks plus imported shared tasks
 Common workflows:
 
 ```bash
-uds run dry-run                      # tests and package rendering; no cluster
-uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
-uds run dev --with WIPE_CLUSTER=0    # preserve k3s
-uds run redeploy                     # fastest deployed-code iteration
+uds run dry-run                            # tests and package rendering; no cluster
+uds run local-e2e                          # full bare-k3s browser E2E
+uds run local-e2e --with WIPE_CLUSTER=0    # preserve k3s and UDS Core
+uds run redeploy                           # fastest deployed-code iteration
 uds run smoke-test
 ```
 
@@ -171,21 +177,21 @@ For a clean cluster rebuild that reuses existing local qcow2 images, follow the
 
 ```bash
 # List running VMs
-kubectl get vmi -n uds-lab-vms
+kubectl get vmi -n uds-labs-vms
 
 # Serial console (shows cloud-init / user-data output)
-virtctl console <vmi-name> -n uds-lab-vms   # exit: Ctrl+]
+virtctl console <vmi-name> -n uds-labs-vms   # exit: Ctrl+]
 
 # SSH
 virtctl ssh --local-ssh-opts="-i $(pwd)/packer/packer-key" \
-  lab@vmi/<vmi-name> -n uds-lab-vms
+  lab@vmi/<vmi-name> -n uds-labs-vms
 ```
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VM_NAMESPACE` | `uds-lab-vms` | Namespace for VMIs, DataVolumes, Services |
+| `VM_NAMESPACE` | `uds-labs-vms` | Namespace for VMIs, DataVolumes, Services |
 | `SESSION_TTL_MINUTES` | `60` | Lab session lifetime |
 | `PORT` | `8080` | HTTP listen port |
 | `SCENARIOS_DIR` | *(embedded)* | Override embedded scenarios with a local directory |
@@ -300,7 +306,7 @@ internal/
     kubevirt/   # KubeVirt provider: VMI + DataVolume + Service + NetworkPolicy
   session/      # session manager, session state
 packer/         # QEMU packer builds for each VM tier
-chart/          # Helm chart for lab-platform deployment
+chart/          # Helm chart for uds-labs deployment
 scripts/        # dev workflow scripts
 vm/             # user-data.sh.gotmpl — cloud-init for lab VMs
 scenarios/      # lab scenario definitions
@@ -315,11 +321,11 @@ Release package creation and publishing are currently manual. The release steps
 remain disabled in GitHub Actions until the required runner and release
 environment are configured.
 
-The VM-image package must be built and published to
-`registry.uds-mil.us/enxo/lab-vm-images` before a clean development cluster can
-run the default flow. Build it locally with `uds run build-images`, wrap the
-qcow2 files with `uds run build-vm-images`, then publish them with
-`uds run push-vm-images`.
+The versioned VM-image package must be available at
+`ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images` before a clean
+development cluster can run the default flow. Build it locally with
+`uds run build-images`, wrap the qcow2 files with `uds run build-vm-images`,
+create the package with `uds run build-vm-images-package`, then publish it.
 
 ```bash
 # GitHub UI: Actions -> Bump Version -> Run workflow -> select minor/major/patch
@@ -327,9 +333,12 @@ qcow2 files with `uds run build-vm-images`, then publish them with
 gh workflow run bump-version.yaml -f bump_type=minor
 ```
 
-The UDS bundle (`bundle/uds-bundle.yaml`) depends on `ghcr.io/uds-packages/kubevirt`, a Defense Unicorns internal package. **The bundle must never be built or published from public CI** - it can only be assembled on internal DU infrastructure with access to that registry. The bundle is for local dev use only; `uds run build-bundle` and `uds run deploy-bundle` are not run by any CI workflow.
-
-The KubeVirt package is referenced in the bundle exclusively via its OCI registry URL. No KubeVirt tarballs are ever committed to this repo or produced by CI.
+The default deployment bundle stages the locally built placement-enabled
+packages from `~/src/github.com/defenseunicorns-udm/kubevirt` and
+`~/src/github.com/defenseunicorns-udm/containerized-data-importer`. It uses an
+ignored environment configuration copied from `bundle/uds-config.example.yaml`.
+The committed `bundle/local/` profile is separate and needs no deployment config.
+Package tarballs and environment configuration remain ignored build artifacts.
 
 ### Iterating on the operator
 
@@ -338,12 +347,12 @@ The KubeVirt package is referenced in the bundle exclusively via its OCI registr
 uds run redeploy
 
 # Watch operator logs
-kubectl logs -n lab-platform -l app=lab-operator -f
+kubectl logs -n uds-labs -l app=lab-operator -f
 
-# Create a test session
-kubectl apply -f test-session.yaml
+# Create a test session with an expiry relative to the current time
+./scripts/create-test-session.sh
 kubectl get labsession -A -w
-kubectl get vmi -n uds-lab-vms -w
+kubectl get vmi -n uds-labs-vms -w
 ```
 
 ### Session Management

@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -15,8 +17,8 @@ import (
 	kvv1 "kubevirt.io/api/core/v1"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
-	"github.com/enxoco/uds-lab-platform/internal/sizing"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/sizing"
 )
 
 // scenariosFS points at the real scenario fixtures relative to this package.
@@ -121,14 +123,14 @@ func testLabSession(name, namespace string) *labv1.LabSession {
 func TestEnsureDataVolume_UsesPVCCloneSource(t *testing.T) {
 	s := testScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(s).Build()
-	ls := testLabSession("test-ls", "uds-lab-vms")
+	ls := testLabSession("test-ls", "uds-labs-vms")
 
 	p := New(Config{
 		Client:             fc,
-		Namespace:          "uds-lab-vms",
+		Namespace:          "uds-labs-vms",
 		GoldenPVCs:         map[string]string{"base": "golden-base"},
-		GoldenPVCNamespace: "uds-lab-golden",
-		GoldenPVCDiskSize:  "80Gi",
+		GoldenPVCNamespace: "uds-labs-golden",
+		GoldenPVCDiskSize:  "40Gi",
 	})
 
 	err := p.ensureDataVolume(context.Background(), ls, "lab-testdata", map[string]string{"test": "true"}, "golden-base")
@@ -137,7 +139,7 @@ func TestEnsureDataVolume_UsesPVCCloneSource(t *testing.T) {
 	}
 
 	dv := &cdiv1.DataVolume{}
-	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-lab-vms", Name: "lab-testdata"}, dv); err != nil {
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-testdata"}, dv); err != nil {
 		t.Fatalf("get DataVolume: %v", err)
 	}
 
@@ -147,8 +149,8 @@ func TestEnsureDataVolume_UsesPVCCloneSource(t *testing.T) {
 	if dv.Spec.Source.Registry != nil {
 		t.Error("registry source must be nil for PVC clone")
 	}
-	if dv.Spec.Source.PVC.Namespace != "uds-lab-golden" {
-		t.Errorf("source PVC namespace = %q, want uds-lab-golden", dv.Spec.Source.PVC.Namespace)
+	if dv.Spec.Source.PVC.Namespace != "uds-labs-golden" {
+		t.Errorf("source PVC namespace = %q, want uds-labs-golden", dv.Spec.Source.PVC.Namespace)
 	}
 	if dv.Spec.Source.PVC.Name != "golden-base" {
 		t.Errorf("source PVC name = %q, want golden-base", dv.Spec.Source.PVC.Name)
@@ -159,23 +161,47 @@ func TestEnsureDataVolume_UsesPVCCloneSource(t *testing.T) {
 	if dv.Spec.Storage == nil {
 		t.Fatal("clone storage spec is nil; CDI cannot apply filesystem overhead")
 	}
+	if dv.Spec.Storage.VolumeMode == nil || *dv.Spec.Storage.VolumeMode != corev1.PersistentVolumeFilesystem {
+		t.Fatalf("clone volume mode = %v, want Filesystem for rootless CDI compatibility", dv.Spec.Storage.VolumeMode)
+	}
 	storage := dv.Spec.Storage.Resources.Requests["storage"]
-	if storage.String() != "80Gi" {
-		t.Errorf("storage = %q, want 80Gi", storage.String())
+	if storage.String() != "40Gi" {
+		t.Errorf("storage = %q, want 40Gi", storage.String())
+	}
+}
+
+func TestEnsureDataVolume_ResumeKeepsExistingSessionDisk(t *testing.T) {
+	s := testScheme(t)
+	ls := testLabSession("resume", "uds-labs-vms")
+	existing := &cdiv1.DataVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: "lab-resume", Namespace: "uds-labs-vms", CreationTimestamp: metav1.Now()},
+		Spec:       cdiv1.DataVolumeSpec{Source: &cdiv1.DataVolumeSource{PVC: &cdiv1.DataVolumeSourcePVC{Namespace: "uds-labs-vms", Name: "original-golden"}}},
+	}
+	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build()
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms"})
+	if err := p.ensureDataVolume(context.Background(), ls, "lab-resume", nil, "different-golden"); err != nil {
+		t.Fatal(err)
+	}
+	got := &cdiv1.DataVolume{}
+	if err := fc.Get(context.Background(), client.ObjectKeyFromObject(existing), got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.Source == nil || got.Spec.Source.PVC == nil || got.Spec.Source.PVC.Name != "original-golden" {
+		t.Fatalf("resume replaced retained disk source: %+v", got.Spec.Source)
 	}
 }
 
 func TestEnsureDataVolume_NamespaceFallsBackToVMNamespace(t *testing.T) {
 	s := testScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(s).Build()
-	ls := testLabSession("test-ls2", "uds-lab-vms")
+	ls := testLabSession("test-ls2", "uds-labs-vms")
 
 	p := New(Config{
 		Client:             fc,
-		Namespace:          "uds-lab-vms",
+		Namespace:          "uds-labs-vms",
 		GoldenPVCs:         map[string]string{"base": "golden-base"},
 		GoldenPVCNamespace: "", // empty → fall back to Namespace
-		GoldenPVCDiskSize:  "80Gi",
+		GoldenPVCDiskSize:  "40Gi",
 	})
 
 	if err := p.ensureDataVolume(context.Background(), ls, "lab-testdata2", nil, "golden-base"); err != nil {
@@ -183,23 +209,23 @@ func TestEnsureDataVolume_NamespaceFallsBackToVMNamespace(t *testing.T) {
 	}
 
 	dv := &cdiv1.DataVolume{}
-	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-lab-vms", Name: "lab-testdata2"}, dv); err != nil {
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-testdata2"}, dv); err != nil {
 		t.Fatalf("get DataVolume: %v", err)
 	}
 
-	if dv.Spec.Source.PVC.Namespace != "uds-lab-vms" {
-		t.Errorf("source PVC namespace = %q, want uds-lab-vms (fallback)", dv.Spec.Source.PVC.Namespace)
+	if dv.Spec.Source.PVC.Namespace != "uds-labs-vms" {
+		t.Errorf("source PVC namespace = %q, want uds-labs-vms (fallback)", dv.Spec.Source.PVC.Namespace)
 	}
 }
 
 func TestEnsureDataVolume_DiskSizeFallsBackToDefault(t *testing.T) {
 	s := testScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(s).Build()
-	ls := testLabSession("test-ls3", "uds-lab-vms")
+	ls := testLabSession("test-ls3", "uds-labs-vms")
 
 	p := New(Config{
 		Client:            fc,
-		Namespace:         "uds-lab-vms",
+		Namespace:         "uds-labs-vms",
 		GoldenPVCs:        map[string]string{"base": "golden-base"},
 		GoldenPVCDiskSize: "", // empty → use defaultDiskSize
 	})
@@ -209,7 +235,7 @@ func TestEnsureDataVolume_DiskSizeFallsBackToDefault(t *testing.T) {
 	}
 
 	dv := &cdiv1.DataVolume{}
-	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-lab-vms", Name: "lab-testdata3"}, dv); err != nil {
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-testdata3"}, dv); err != nil {
 		t.Fatalf("get DataVolume: %v", err)
 	}
 
@@ -225,11 +251,28 @@ func TestEnsureDataVolume_DiskSizeFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestEnsureDataVolume_PropagatesStorageClass(t *testing.T) {
+	s := testScheme(t)
+	fc := fake.NewClientBuilder().WithScheme(s).Build()
+	ls := testLabSession("storage-class", "uds-labs-vms")
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms", StorageClass: "managed-csi-premium"})
+	if err := p.ensureDataVolume(context.Background(), ls, "lab-storage", nil, "golden-base"); err != nil {
+		t.Fatal(err)
+	}
+	dv := &cdiv1.DataVolume{}
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-storage"}, dv); err != nil {
+		t.Fatal(err)
+	}
+	if dv.Spec.Storage == nil || dv.Spec.Storage.StorageClassName == nil || *dv.Spec.Storage.StorageClassName != "managed-csi-premium" {
+		t.Fatalf("storage class not propagated: %+v", dv.Spec.Storage)
+	}
+}
+
 func TestEnsureVMI_OptsLauncherOutOfAmbientMesh(t *testing.T) {
 	s := testScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(s).Build()
-	ls := testLabSession("test-vmi", "uds-lab-vms")
-	p := New(Config{Client: fc, Namespace: "uds-lab-vms"})
+	ls := testLabSession("test-vmi", "uds-labs-vms")
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms"})
 
 	if err := p.ensureVMI(
 		context.Background(),
@@ -242,10 +285,78 @@ func TestEnsureVMI_OptsLauncherOutOfAmbientMesh(t *testing.T) {
 	}
 
 	vmi := &kvv1.VirtualMachineInstance{}
-	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-lab-vms", Name: "lab-test-vmi"}, vmi); err != nil {
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-test-vmi"}, vmi); err != nil {
 		t.Fatalf("get VMI: %v", err)
 	}
 	if got := vmi.Labels["istio.io/dataplane-mode"]; got != "none" {
 		t.Fatalf("VMI ambient opt-out label = %q, want none", got)
+	}
+}
+
+func TestEnsureVMI_RendersMasqueradePlacementAndOneLabPerNode(t *testing.T) {
+	s := testScheme(t)
+	fc := fake.NewClientBuilder().WithScheme(s).Build()
+	ls := testLabSession("placement", "uds-labs-vms")
+	p := New(Config{
+		Client:       fc,
+		Namespace:    "uds-labs-vms",
+		NodeSelector: map[string]string{"labs.uds.dev/compute": "true"},
+		Tolerations:  []corev1.Toleration{{Key: "workload", Value: "uds-labs", Effect: corev1.TaintEffectNoSchedule}},
+	})
+	if err := p.ensureVMI(context.Background(), ls, "lab-placement", map[string]string{sessionLabel: "placement"}, sizing.Spec{CPU: "8", Memory: "16Gi"}); err != nil {
+		t.Fatal(err)
+	}
+	vmi := &kvv1.VirtualMachineInstance{}
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-placement"}, vmi); err != nil {
+		t.Fatal(err)
+	}
+	if vmi.Spec.NodeSelector["labs.uds.dev/compute"] != "true" || len(vmi.Spec.Tolerations) != 1 {
+		t.Fatalf("placement not rendered: selector=%v tolerations=%v", vmi.Spec.NodeSelector, vmi.Spec.Tolerations)
+	}
+	if len(vmi.Spec.Networks) != 1 || vmi.Spec.Networks[0].Pod == nil || len(vmi.Spec.Domain.Devices.Interfaces) != 1 || vmi.Spec.Domain.Devices.Interfaces[0].Masquerade == nil {
+		t.Fatalf("explicit masquerade pod network missing: networks=%+v interfaces=%+v", vmi.Spec.Networks, vmi.Spec.Domain.Devices.Interfaces)
+	}
+	terms := vmi.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+	if len(terms) != 1 || terms[0].TopologyKey != corev1.LabelHostname || terms[0].LabelSelector.MatchLabels[workloadLabel] != workloadLabelVMI {
+		t.Fatalf("one-Lab-per-node anti-affinity missing: %+v", terms)
+	}
+}
+
+func TestEnsureNetworkPolicy_AllowsDNSAndExcludesInternalCIDRs(t *testing.T) {
+	s := testScheme(t)
+	fc := fake.NewClientBuilder().WithScheme(s).Build()
+	ls := testLabSession("network", "uds-labs-vms")
+	blocked := []string{"10.0.0.0/8", "169.254.0.0/16"}
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms", ServerNamespace: "uds-labs", BlockedEgressCIDRs: blocked})
+	if err := p.ensureNetworkPolicy(context.Background(), ls, "lab-network", map[string]string{sessionLabel: "network"}); err != nil {
+		t.Fatal(err)
+	}
+	np := &netv1.NetworkPolicy{}
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-network"}, np); err != nil {
+		t.Fatal(err)
+	}
+	if len(np.Spec.Egress) != 2 || len(np.Spec.Egress[0].To) != 0 || len(np.Spec.Egress[0].Ports) != 2 {
+		t.Fatalf("portable TCP/UDP DNS rule missing: %+v", np.Spec.Egress)
+	}
+	internet := np.Spec.Egress[1].To[0].IPBlock
+	if internet == nil || internet.CIDR != "0.0.0.0/0" || len(internet.Except) != 2 || internet.Except[0] != blocked[0] {
+		t.Fatalf("internet exclusions not rendered: %+v", internet)
+	}
+}
+
+func TestTeardownComputeRetainsSessionDataVolume(t *testing.T) {
+	s := testScheme(t)
+	ls := testLabSession("retain", "uds-labs-vms")
+	name := resourceName(ls)
+	dv := &cdiv1.DataVolume{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "uds-labs-vms"}}
+	vmi := &kvv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "uds-labs-vms"}}
+	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(dv, vmi).Build()
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms"})
+	stopped, err := p.TeardownCompute(context.Background(), ls)
+	if err != nil || !stopped {
+		t.Fatalf("teardown compute: stopped=%v err=%v", stopped, err)
+	}
+	if err := fc.Get(context.Background(), client.ObjectKeyFromObject(dv), &cdiv1.DataVolume{}); err != nil {
+		t.Fatalf("pause deleted retained DataVolume: %v", err)
 	}
 }

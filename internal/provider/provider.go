@@ -1,13 +1,13 @@
 // Package provider defines the VM backend abstraction the Lab Operator
-// reconciles through (ADR-0011). KubeVirt is the only implementation today;
-// Azure VMSS is the intended second implementation, which is why lifecycle is
-// expressed in provider-neutral terms here.
+// reconciles through (ADR-0011). KubeVirt on AKS is the planned implementation;
+// the lifecycle interface keeps its orchestration independent from KubeVirt API
+// details rather than promising a second cloud provider.
 package provider
 
 import (
 	"context"
 
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
 )
 
 // Result is the observed outcome of a Reconcile, mapped onto LabSession status.
@@ -31,21 +31,11 @@ type Provider interface {
 	// Reconcile ensures the VM and its supporting objects exist and reports
 	// progress. It does not block waiting for readiness.
 	Reconcile(ctx context.Context, ls *labv1.LabSession) (Result, error)
-	// Teardown removes everything Reconcile created (compute + disk + snapshot).
+	// Teardown removes everything Reconcile created, including the session disk.
 	// It must be idempotent and succeed if the objects are already gone.
 	Teardown(ctx context.Context, ls *labv1.LabSession) error
-	// TeardownCompute removes only the VMI, Service, and NetworkPolicy — leaves
-	// the DataVolume PVC intact so a snapshot can be taken.
-	TeardownCompute(ctx context.Context, ls *labv1.LabSession) error
-	// TeardownDisk removes the DataVolume (and therefore its PVC).
-	TeardownDisk(ctx context.Context, ls *labv1.LabSession) error
-	// Snapshot creates a VolumeSnapshot of the session's disk and returns its
-	// name. The snapshot is not ready immediately; poll with SnapshotReady.
-	Snapshot(ctx context.Context, ls *labv1.LabSession) (string, error)
-	// SnapshotReady returns true when the named VolumeSnapshot is ready to use
-	// as a DataVolume source.
-	SnapshotReady(ctx context.Context, snapName string) (bool, error)
-	// DeleteSnapshot deletes the named VolumeSnapshot. It is idempotent:
-	// a not-found error is treated as success.
-	DeleteSnapshot(ctx context.Context, snapName string) error
+	// TeardownCompute removes only the VMI, Service, and NetworkPolicy while
+	// retaining the DataVolume/PVC. stopped is true only after the VMI no longer
+	// exists, so the controller does not report Paused while compute is running.
+	TeardownCompute(ctx context.Context, ls *labv1.LabSession) (stopped bool, err error)
 }

@@ -21,8 +21,8 @@ The full end-to-end environment requires:
 - `virtctl` for VM console and SSH access
 - Packer 1.9 or newer, `qemu-img`, and `qemu-system-x86_64` when building VM
   images
-- Local KubeVirt package checkout: `~/src/github.com/uds-packages/kubevirt`
-- Prebuilt CDI package artifact from the separate CDI repository
+- Placement-enabled KubeVirt checkout: `~/src/github.com/defenseunicorns-udm/kubevirt`
+- Placement-enabled CDI checkout: `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
 
 Override either checkout when it lives elsewhere:
 
@@ -37,7 +37,7 @@ Chainguard registry. The `upstream` flavor does not use that image source.
 
 ## Discover available tasks
 
-List the 31 tasks maintained in this repository:
+List the 33 tasks maintained in this repository:
 
 ```bash
 uds run --list
@@ -59,79 +59,79 @@ Pass task inputs with `--with`:
 
 ```bash
 uds run dev --with WIPE_CLUSTER=0 \
-  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
+  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 ```
 
 Input names are case-sensitive.
 
-## Start a development environment
+## Full local E2E
 
-Refresh sudo credentials before a full cluster build. The k3s steps require
-sudo and may run long enough for an existing sudo session to expire.
+The committed [`bundle/local/uds-bundle.yaml`](../bundle/local/uds-bundle.yaml)
+profile is the supported bare-k3s profile. It uses empty Kubernetes placement,
+`local-path` storage, `uds.dev`, capacity one, and no environment-specific
+Keycloak group restriction.
+
+Refresh sudo credentials immediately before a full run:
 
 ```bash
 sudo -v
-uds run dev --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
+uds run local-e2e \
+  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
 ```
 
-The workflow builds dependencies, creates or replaces the k3s cluster, deploys
-the platform, patches local DNS and auth routes, starts the local SNI proxy,
-creates the test user, and runs smoke tests.
+`uds run dev` is an alias for `local-e2e`. The task performs these steps in
+order:
+
+1. Preflight checks for KVM, tools, and external package artifacts.
+2. Recreate bare k3s, install MetalLB, and initialize Zarf.
+3. Deploy the pinned standalone UDS Core 1.10.0 `core-base` and
+   `core-identity-authorization` Zarf packages directly. No k3d bundle or k3d
+   package is used; the identity package installs both Keycloak and authservice.
+4. Build/stage KubeVirt, CDI, the VM-image package, and UDS Labs.
+5. Build and deploy the local bundle profile.
+6. Patch cluster DNS, start the local SNI proxy, and create the test user.
+7. Verify golden DataVolumes, the UDS Labs server, and authservice.
 
 When complete:
 
-- UI: `https://lab.uds.dev`
+- UI: `https://labs.uds.dev`
 - Keycloak admin: `https://keycloak.admin.uds.dev`
 - Test user: `doug@uds.dev`
 - Test password: `unicorn123!@#UN`
 
-### Nuclear reset with existing local VM images
-
-Use this flow to destroy and recreate the local k3s cluster, rebuild the
-Unicorn CDI package, and deploy image-server containers from existing local
-qcow2 files:
+Open the UI, authenticate, start a Lab, and verify terminal and browser access.
+For an operator-only lifecycle check:
 
 ```bash
-uds run dev \
-  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst" \
-  --with WIPE_CLUSTER=1 \
-  --with BUILD_IMAGES=0 \
-  --with LOCAL_VM_IMAGES=1
+./scripts/create-test-session.sh
+kubectl get labsession -A -w
+kubectl get vmi -n uds-labs-vms -w
 ```
 
-This is the nuclear option:
+### VM-image inputs
 
-- `WIPE_CLUSTER=1` removes the existing k3s cluster and cleans generated
-  packages, bundles, image tarballs, and the Zarf temporary cache.
-- `CDI_PACKAGE` selects a prebuilt CDI artifact. Build the Unicorn flavor in
-  the separate CDI repository first.
-- `BUILD_IMAGES=0` skips the hour-long Packer build. It does not create qcow2
-  files.
-- `LOCAL_VM_IMAGES=1` wraps existing qcow2 files in local image-server
-  containers and includes them in the deployment.
-- `GITHUB_TOKEN="$(gh auth token)"` supplies the current GitHub CLI token only
-  to this command and its child processes. Do not run it with shell tracing
-  enabled.
+By default, the task reuses a matching ignored package under
+`packages/vm-images/`. If one is not present, it pulls the matching package
+version from GHCR.
 
-Before running it, verify authentication, local images, Docker, and sudo:
+Build both qcow2 images and package them locally:
 
 ```bash
-gh auth status
+uds run local-e2e --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
+```
+
+Reuse existing qcow2 outputs while rebuilding the local package:
+
+```bash
+uds run local-e2e --with BUILD_IMAGES=0 --with LOCAL_VM_IMAGES=1
+```
+
+Before reusing qcow2 files, verify them:
+
+```bash
 test -s packer/output/base/lab-base.qcow2
 test -s packer/output/uds-core/lab-playground-uds-core.qcow2
 docker info >/dev/null
-sudo -v
-```
-
-If either qcow2 check fails, build the missing images first or change
-`BUILD_IMAGES` to `1`. The `build-vm-images` task skips a tier whose qcow2
-directory is empty, so these checks prevent a late provisioning failure.
-
-The `dev` task ends by running `smoke-test`. A successful run reports the UI
-and Keycloak URLs. Recheck the deployed state at any time with:
-
-```bash
-uds run smoke-test
 ```
 
 ### Preserve the cluster
@@ -153,7 +153,7 @@ uds run smoke-test
 Watch the operator after redeployment:
 
 ```bash
-kubectl logs -n lab-platform -l app=lab-operator -f
+kubectl logs -n uds-labs -l app=lab-operator -f
 ```
 
 ### Use locally built VM images
@@ -225,9 +225,9 @@ uds run smoke-test
 Apply the sample session and watch its resources:
 
 ```bash
-kubectl apply -f test-session.yaml
+./scripts/create-test-session.sh
 kubectl get labsession -A -w
-kubectl get vmi -n uds-lab-vms -w
+kubectl get vmi -n uds-labs-vms -w
 ```
 
 ## Run the server from source
@@ -251,7 +251,7 @@ Useful server environment variables:
 | Variable | Default | Purpose |
 |---|---:|---|
 | `PORT` | `8080` | HTTP listen port |
-| `VM_NAMESPACE` | `uds-lab-vms` | Namespace containing lab VM resources |
+| `VM_NAMESPACE` | `uds-labs-vms` | Namespace containing lab VM resources |
 | `SERVER_NAMESPACE` | value of `VM_NAMESPACE` | Namespace containing server-owned resources |
 | `SESSION_TTL_MINUTES` | `60` | Session lifetime |
 | `SCENARIOS_DIR` | embedded scenarios | Read scenario files from disk |
@@ -298,12 +298,13 @@ requires them.
 | `build-images` | Builds base then UDS Core qcow2 images with Packer | `build=1`, `skip_base=0`, `skip_uds_core=0`; up to two hours |
 | `build-vm-images` | Builds local OCI image servers from qcow2 outputs | `build=1`, `base_qcow2`, `uds_core_qcow2`, `tag` |
 | `push-vm-images` | Pushes base and UDS Core image-server images to GHCR | `tag`; requires registry write access |
-| `build-image` | Builds the versioned lab-platform container image | Version comes from `zarf.yaml` |
-| `push-image` | Pushes the lab-platform image to GHCR | Requires registry write access |
+| `build-image` | Builds the versioned uds-labs container image | Version comes from `zarf.yaml` |
+| `push-image` | Pushes the uds-labs image to GHCR | Requires registry write access |
 | `build-kubevirt` | Builds the external KubeVirt Zarf package | `dir`, `rebuild=1`, `skip_if_exists=0` |
 | `stage-cdi-package` | Stages a prebuilt external CDI package for bundle creation | `package` |
-| `build-lab-package` | Builds the lab-platform Zarf package | `vm_image_tag`; defaults to package version |
-| `build-bundle` | Creates the UDS bundle under `bundle/` | Requires access to internal package dependencies |
+| `build-lab-package` | Builds the UDS Labs server/operator Zarf package | none |
+| `build-vm-images-package` | Reuses/pulls a versioned VM-image package or builds one locally | `local`, `repository` |
+| `build-bundle` | Creates the selected UDS bundle | `profile=default\|local`; requires dependency packages |
 
 ### Cluster infrastructure
 
@@ -313,45 +314,46 @@ requires them.
 | `install-k3s` | Installs pinned k3s without Traefik or ServiceLB | `run=1`, `skip=0`; requires sudo |
 | `install-metallb` | Installs MetalLB and configures a local address pool | `version=v0.14.9`, `range` auto-detected |
 | `zarf-init` | Initializes Zarf, retrying the known injector cleanup race | `run=1`, `skip=0` |
+| `deploy-local-uds-core` | Deploys standalone UDS Core base and identity packages on bare k3s | `run`, pinned `base_package`, `identity_package` |
 | `wait-kubevirt` | Waits for KubeVirt to report Available | Existing cluster required |
 | `populate-golden-pvcs` | Imports local qcow2 files through temporary HTTP servers | `base_qcow2`, `uds_core_qcow2`, `namespace`, `skip=0` |
-| `cluster-up` | Runs the complete infrastructure and package deployment sequence | Defaults to `WIPE_CLUSTER=1`; see inputs below |
+| `cluster-up` | Lower-level k3s plus selected bundle deployment compatibility flow | Does not install UDS Core or configure browser access |
 | `verify-cluster` | Prints node, KubeVirt, and workload status | Read-only |
 
 ### Deploy and operate
 
 | Task | What it does | Important inputs or notes |
 |---|---|---|
-| `deploy-bundle` | Deploys the newest bundle tarball from `bundle/` | Run `build-bundle` first |
-| `patch-demo-routes` | Restores unauthenticated demo-route exemptions | `namespace=lab-platform`; rerun after Helm reconciliation |
+| `deploy-bundle` | Deploys the newest selected-profile bundle | `profile=default\|local`; run `build-bundle` first |
+| `patch-demo-routes` | Restores unauthenticated demo-route exemptions | `namespace=uds-labs`; rerun after Helm reconciliation |
 | `patch-coredns` | Maps UDS hostnames to MetalLB gateways and restarts authservice | Existing deployed cluster required |
 | `create-test-user` | Creates the documented Keycloak test user | Calls shared `uds-setup:keycloak-user` |
 | `start-proxy` | Starts the local nginx SNI proxy on ports 80 and 443 | Requires gateway LoadBalancer IPs |
 | `stop-proxy` | Stops the local nginx SNI proxy | Uses Docker Compose |
-| `redeploy` | Rebuilds and redeploys only the application package | `vm_image_tag` |
-| `smoke-test` | Checks golden PVCs, demo auth policies, app pod, and authservice | Returns nonzero on failure |
-| `dev` | Runs the full local end-to-end workflow | Defaults to `WIPE_CLUSTER=1`; see inputs below |
+| `redeploy` | Rebuilds and redeploys without rebuilding infrastructure packages | `BUNDLE_PROFILE=local`, `vm_image_tag` |
+| `smoke-test` | Checks golden PVCs, app pod, and authservice | Returns nonzero on failure |
+| `local-e2e` | Runs the supported bare-k3s end-to-end workflow | Defaults to `WIPE_CLUSTER=1`; see inputs below |
+| `dev` | Backward-compatible alias for `local-e2e` | Same inputs as `local-e2e` |
 
 ### Composite task inputs
 
-`dev` accepts:
+`local-e2e` and `dev` accept:
 
 | Input | Default | Effect |
 |---|---:|---|
-| `WIPE_CLUSTER` | `1` | Uninstall and reinstall k3s |
+| `WIPE_CLUSTER` | `1` | Recreate k3s and UDS Core; use `0` to preserve them |
+| `KUBEVIRT_PKG_DIR` | `~/src/github.com/defenseunicorns-udm/kubevirt` | Select the placement-enabled KubeVirt checkout |
+| `CDI_PACKAGE` | external upstream artifact | Select the prebuilt CDI package |
+| `UDS_CORE_BASE_PACKAGE` | UDS Core `core-base:1.10.0-upstream` | Standalone base package for bare k3s |
+| `UDS_CORE_IDENTITY_PACKAGE` | UDS Core `core-identity-authorization:1.10.0-upstream` | Standalone Keycloak and authservice package for bare k3s |
 | `BUILD_IMAGES` | `0` | Build local qcow2 images |
-| `LOCAL_VM_IMAGES` | `0` | Build and embed local VM image-server containers |
-| `SKIP_BASE` | `0` | Reuse the existing base qcow2 |
-| `SKIP_UDS_CORE` | `0` | Reuse the existing UDS Core qcow2 |
-| `SKIP_GOLDEN_PVC` | `1` | Skip the host-served qcow2 fallback |
+| `LOCAL_VM_IMAGES` | `0` | Build the VM-image package locally instead of reusing/pulling it |
+| `SKIP_BASE` | `0` | Skip rebuilding the base qcow2 when image building is enabled |
+| `SKIP_UDS_CORE` | `0` | Skip rebuilding the UDS Core qcow2 when image building is enabled |
 | `VM_IMAGE_TAG` | package version | Select the VM image-server tag |
-| `CDI_PACKAGE` | CDI package artifact under the external checkout | Select the prebuilt CDI package |
 
-`cluster-up` accepts the same inputs plus:
-
-| Input | Default | Effect |
-|---|---:|---|
-| `KUBEVIRT_PKG_DIR` | `~/src/github.com/uds-packages/kubevirt` | Select the KubeVirt checkout |
+`cluster-up` remains a lower-level compatibility task. It does not install UDS
+Core or configure local browser access; prefer `local-e2e` for full testing.
 
 ## Shared included tasks
 
@@ -420,9 +422,9 @@ uds run smoke-test
 Inspect CDI resources and events:
 
 ```bash
-kubectl get datavolumes -n uds-lab-vms
+kubectl get datavolumes -n uds-labs-vms
 kubectl get pods -n cdi
-kubectl get events -n uds-lab-vms --sort-by=.lastTimestamp
+kubectl get events -n uds-labs-vms --sort-by=.lastTimestamp
 ```
 
 Use the local qcow2 fallback only when packaged image servers are unavailable:
@@ -443,8 +445,8 @@ sudo ss -ltnp '( sport = :80 or sport = :443 )'
 ### Inspect a running VM
 
 ```bash
-kubectl get vmi -n uds-lab-vms
-virtctl console <vmi-name> -n uds-lab-vms
+kubectl get vmi -n uds-labs-vms
+virtctl console <vmi-name> -n uds-labs-vms
 virtctl ssh --local-ssh-opts="-i $(pwd)/packer/packer-key" \
-  lab@vmi/<vmi-name> -n uds-lab-vms
+  lab@vmi/<vmi-name> -n uds-labs-vms
 ```

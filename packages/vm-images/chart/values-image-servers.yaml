@@ -1,0 +1,4 @@
+imageServers:
+  enabled: true
+goldenPVCs:
+  enabled: false

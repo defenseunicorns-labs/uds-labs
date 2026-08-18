@@ -15,15 +15,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	kvv1 "kubevirt.io/api/core/v1"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
-	labplatform "github.com/enxoco/uds-lab-platform"
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
-	"github.com/enxoco/uds-lab-platform/internal/controller"
-	"github.com/enxoco/uds-lab-platform/internal/operator"
-	"github.com/enxoco/uds-lab-platform/internal/provider/kubevirt"
+	labplatform "github.com/defenseunicorns-labs/uds-labs"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/controller"
+	"github.com/defenseunicorns-labs/uds-labs/internal/operator"
+	"github.com/defenseunicorns-labs/uds-labs/internal/provider/kubevirt"
 )
 
 var scheme = runtime.NewScheme()
@@ -33,16 +32,14 @@ func init() {
 	utilruntime.Must(labv1.AddToScheme(scheme))
 	utilruntime.Must(kvv1.AddToScheme(scheme))
 	utilruntime.Must(cdiv1.AddToScheme(scheme))
-	utilruntime.Must(snapshotv1.AddToScheme(scheme))
 }
 
 func main() {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 	setupLog := ctrl.Log.WithName("setup")
 
-	vmNamespace := envOr("VM_NAMESPACE", "uds-lab-vms")
-	serverNamespace := envOr("SERVER_NAMESPACE", "uds-lab-platform")
-	storageClass := os.Getenv("STORAGE_CLASS")
+	vmNamespace := envOr("VM_NAMESPACE", "uds-labs-vms")
+	serverNamespace := envOr("SERVER_NAMESPACE", "uds-labs")
 
 	// Operator ConfigMap: size tiers + image refs (ADR-0013).
 	cfg, err := operator.Load(os.Getenv("OPERATOR_CONFIG"))
@@ -90,17 +87,21 @@ func main() {
 	}
 
 	prov := kubevirt.New(kubevirt.Config{
-		Client:          mgr.GetClient(),
-		Namespace:       vmNamespace,
-		ServerNamespace: serverNamespace,
-		UserDataTmpl:    udTmpl,
-		ScenariosFS:     scenariosFS,
-		InjectPy:        string(injectPy),
-		SizeOverrides:   sizeOverrides,
+		Client:             mgr.GetClient(),
+		Namespace:          vmNamespace,
+		ServerNamespace:    serverNamespace,
+		UserDataTmpl:       udTmpl,
+		ScenariosFS:        scenariosFS,
+		InjectPy:           string(injectPy),
+		SizeOverrides:      sizeOverrides,
 		GoldenPVCs:         cfg.GoldenPVCs,
 		GoldenPVCNamespace: cfg.GoldenPVCNamespace,
 		GoldenPVCDiskSize:  cfg.GoldenPVCDiskSize,
-		StorageClass:    storageClass,
+		StorageClass:       cfg.StorageClass,
+		NodeSelector:       cfg.VMIPlacement.NodeSelector,
+		Affinity:           cfg.VMIPlacement.Affinity,
+		Tolerations:        cfg.VMIPlacement.Tolerations,
+		BlockedEgressCIDRs: cfg.BlockedEgressCIDRs,
 	})
 
 	if err := (&controller.LabSessionReconciler{

@@ -1,0 +1,20 @@
+imageTag: 0.4.1
+images:
+  base:
+    file: lab-base.qcow2
+    size: 20Gi
+  uds-core:
+    file: lab-playground-uds-core.qcow2
+    size: 40Gi
+imageServers:
+  enabled: true
+  placement:
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
+goldenPVCs:
+  enabled: true
+  storageClass: ""
+  # Filesystem works with rootless CDI importers across CRI implementations.
+  # Raw Block requires containerd device_ownership_from_security_context=true.
+  volumeMode: Filesystem

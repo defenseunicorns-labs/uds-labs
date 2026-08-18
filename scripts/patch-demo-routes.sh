@@ -4,12 +4,12 @@
 # WHY THIS EXISTS
 # ───────────────
 # The UDS Package CR has no per-path authservice bypass.  Pepr generates two
-# Istio AuthorizationPolicies for the lab-platform SSO client:
+# Istio AuthorizationPolicies for the uds-labs SSO client:
 #
-#   uds-lab-platform-authservice  (action: Custom)
+#   uds-labs-authservice  (action: Custom)
 #     Routes unauthenticated requests to authservice → Keycloak SSO redirect.
 #
-#   uds-lab-platform-jwt-authz   (action: Deny)
+#   uds-labs-jwt-authz   (action: Deny)
 #     Denies requests that lack a valid SSO JWT from the UDS realm.
 #
 # The self-service demo flow needs /demo and /api/demo-sessions to be
@@ -26,13 +26,13 @@
 #   ./scripts/patch-demo-routes.sh [--namespace <ns>]
 #
 # OPTIONS
-#   --namespace, -n   Namespace of the lab-platform Package CR (default: lab-platform)
+#   --namespace, -n   Namespace of the uds-labs Package CR (default: uds-labs)
 #   --wait            Wait up to 2 min for the policies to exist before patching
 #   --dry-run         Print the patch commands without applying them
 
 set -euo pipefail
 
-NS="lab-platform"
+NS="uds-labs"
 WAIT=0
 DRY_RUN=0
 
@@ -45,8 +45,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-AUTHSERVICE_POLICY="uds-lab-platform-authservice"
-JWT_AUTHZ_POLICY="uds-lab-platform-jwt-authz"
+AUTHSERVICE_POLICY="uds-labs-authservice"
+JWT_AUTHZ_POLICY="uds-labs-jwt-authz"
 DEMO_PATHS='["/demo","/demo/*","/api/demo-sessions"]'
 
 # JSON Patch targets — ambient/waypoint mode:
@@ -106,4 +106,4 @@ echo "Demo route exemptions applied.  Verify:"
 echo "  kubectl get authorizationpolicy -n $NS -o yaml | grep -A4 notPaths"
 echo ""
 echo "NOTE: Pepr re-applies these policies on every Package CR reconciliation."
-echo "      Re-run this script after any Helm upgrade of uds-lab-platform."
+echo "      Re-run this script after any Helm upgrade of uds-labs."

@@ -20,7 +20,7 @@ const (
 	PhaseExpired LabSessionPhase = "Expired"
 	// PhaseFailed: reconciliation hit a terminal error (see Status.Message).
 	PhaseFailed LabSessionPhase = "Failed"
-	// PhasePaused: VM and disk torn down; VolumeSnapshot preserved for resume.
+	// PhasePaused: VM compute is stopped while the session disk is retained.
 	PhasePaused LabSessionPhase = "Paused"
 )
 
@@ -48,8 +48,8 @@ type LabSessionSpec struct {
 	// ExpiresAt is the hard TTL deadline. The operator deletes the session once
 	// now > ExpiresAt (replaces the server's in-memory cleanup loop).
 	ExpiresAt metav1.Time `json:"expiresAt"`
-	// Paused signals the operator to snapshot the VM disk and tear down compute.
-	// Set to false to resume (operator recreates the VM from the snapshot).
+	// Paused signals the operator to stop compute while retaining the session
+	// DataVolume/PVC. Set to false to resume from that same disk.
 	Paused bool `json:"paused,omitempty"`
 }
 
@@ -58,7 +58,7 @@ type LabSessionStatus struct {
 	// Phase is the lifecycle state (see LabSessionPhase).
 	Phase LabSessionPhase `json:"phase,omitempty"`
 	// ServiceDNS is the in-cluster DNS name of the headless Service fronting the
-	// VM (e.g. lab-<id>.uds-lab-vms.svc.cluster.local). The server proxies here
+	// VM (e.g. lab-<id>.uds-labs-vms.svc.cluster.local). The server proxies here
 	// instead of to a public IP. Empty until the VM is Running.
 	ServiceDNS string `json:"serviceDNS,omitempty"`
 	// Message carries human-readable detail, especially for Failed.
@@ -67,10 +67,6 @@ type LabSessionStatus struct {
 	// Written by the lab server after each successful /verify call; read by
 	// the CSM dashboard to show per-step durations.
 	CompletedSteps []StepRecord `json:"completedSteps,omitempty"`
-	// SnapshotName is the VolumeSnapshot taken when the session was paused.
-	// Non-empty means resume should restore from this snapshot instead of cloning
-	// the golden PVC. Cleared when a paused session is fully torn down.
-	SnapshotName string `json:"snapshotName,omitempty"`
 }
 
 // StepRecord captures a single verified step and the time it passed.

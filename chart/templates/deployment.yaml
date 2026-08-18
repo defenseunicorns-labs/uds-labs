@@ -1,39 +1,42 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: lab-platform
+  name: uds-labs
   namespace: {{ .Release.Namespace }}
 ---
 # Server: read/write LabSessions in the VM namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: lab-platform-server
+  name: uds-labs-server
   namespace: {{ .Values.vmNamespace }}
 rules:
-  - apiGroups: ["lab.uds.dev"]
+  - apiGroups: ["labs.uds.dev"]
     resources: ["labsessions"]
     verbs: ["create", "get", "list", "patch", "delete"]
+  - apiGroups: ["labs.uds.dev"]
+    resources: ["labsessions/status"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: lab-platform-server
+  name: uds-labs-server
   namespace: {{ .Values.vmNamespace }}
 subjects:
   - kind: ServiceAccount
-    name: lab-platform
+    name: uds-labs
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: lab-platform-server
+  name: uds-labs-server
   apiGroup: rbac.authorization.k8s.io
 ---
 # Server: demo token ConfigMap in its own namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: lab-platform-demo-tokens
+  name: uds-labs-demo-tokens
   namespace: {{ .Release.Namespace }}
 rules:
   - apiGroups: [""]
@@ -47,15 +50,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: lab-platform-demo-tokens
+  name: uds-labs-demo-tokens
   namespace: {{ .Release.Namespace }}
 subjects:
   - kind: ServiceAccount
-    name: lab-platform
+    name: uds-labs
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: lab-platform-demo-tokens
+  name: uds-labs-demo-tokens
   apiGroup: rbac.authorization.k8s.io
 ---
 # Operator: cluster-wide watch — LabSessions, Services, NetworkPolicies, Secrets.
@@ -65,7 +68,7 @@ kind: ClusterRole
 metadata:
   name: lab-operator-watch
 rules:
-  - apiGroups: ["lab.uds.dev"]
+  - apiGroups: ["labs.uds.dev"]
     resources: ["labsessions", "labsessions/status", "labsessions/finalizers"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
@@ -84,9 +87,6 @@ rules:
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachineinstances"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["snapshot.storage.k8s.io"]
-    resources: ["volumesnapshots"]
-    verbs: ["get", "list", "watch"]
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -95,7 +95,7 @@ metadata:
   name: lab-operator-watch
 subjects:
   - kind: ServiceAccount
-    name: lab-platform
+    name: uds-labs
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
@@ -109,7 +109,7 @@ metadata:
   name: lab-operator
   namespace: {{ .Values.vmNamespace }}
 rules:
-  - apiGroups: ["lab.uds.dev"]
+  - apiGroups: ["labs.uds.dev"]
     resources: ["labsessions", "labsessions/status", "labsessions/finalizers"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
@@ -128,9 +128,6 @@ rules:
   - apiGroups: ["cdi.kubevirt.io"]
     resources: ["datavolumes"]
     verbs: ["create", "update", "delete"]
-  - apiGroups: ["snapshot.storage.k8s.io"]
-    resources: ["volumesnapshots"]
-    verbs: ["create", "get", "list", "watch", "delete"]
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -140,7 +137,7 @@ metadata:
   namespace: {{ .Values.vmNamespace }}
 subjects:
   - kind: ServiceAccount
-    name: lab-platform
+    name: uds-labs
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
@@ -150,21 +147,27 @@ roleRef:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lab-platform
+  name: uds-labs
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: lab-platform
+      app: uds-labs
   template:
     metadata:
       labels:
-        app: lab-platform
+        app: uds-labs
     spec:
-      serviceAccountName: lab-platform
+      serviceAccountName: uds-labs
+      nodeSelector:
+{{ toYaml .Values.serverPlacement.nodeSelector | nindent 8 }}
+      affinity:
+{{ toYaml .Values.serverPlacement.affinity | nindent 8 }}
+      tolerations:
+{{ toYaml .Values.serverPlacement.tolerations | nindent 8 }}
       containers:
-        - name: lab-platform
+        - name: uds-labs
           image: {{ .Values.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           ports:
@@ -174,6 +177,8 @@ spec:
               value: {{ .Values.vmNamespace | quote }}
             - name: SESSION_TTL_MINUTES
               value: {{ .Values.sessionTTLMinutes | default 60 | quote }}
+            - name: MAX_ACTIVE_SESSIONS
+              value: {{ .Values.maxActiveSessions | quote }}
             - name: SERVER_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -225,7 +230,13 @@ spec:
       labels:
         app: lab-operator
     spec:
-      serviceAccountName: lab-platform
+      serviceAccountName: uds-labs
+      nodeSelector:
+{{ toYaml .Values.operatorPlacement.nodeSelector | nindent 8 }}
+      affinity:
+{{ toYaml .Values.operatorPlacement.affinity | nindent 8 }}
+      tolerations:
+{{ toYaml .Values.operatorPlacement.tolerations | nindent 8 }}
       containers:
         - name: lab-operator
           image: {{ .Values.image }}
@@ -246,11 +257,11 @@ spec:
               readOnly: true
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
+              cpu: 1000m
               memory: 128Mi
+            limits:
+              cpu: 4000m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

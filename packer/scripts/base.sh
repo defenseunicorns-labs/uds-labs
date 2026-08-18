@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the UDS lab base image. Installs all static dependencies so
+# Builds the UDS Labs base image. Installs all static dependencies so
 # user-data only needs to write scenario files and start services.
 set -euo pipefail
 
@@ -308,7 +308,7 @@ log "k3d: $(k3d version)"
 
 # ── uds CLI ───────────────────────────────────────────────────────────────────
 log "Installing uds CLI..."
-UDS_VERSION=v0.33.0
+UDS_VERSION=v0.35.1
 UDS_RELEASE="$(mktemp)"
 curl_retry \
   -H 'Accept: application/vnd.github+json' \
