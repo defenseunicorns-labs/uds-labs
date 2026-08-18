@@ -81,13 +81,13 @@ jobs:
             --with attestations="lint-witness.json,gitleaks-witness.json,opengrep-witness.json,zarf-create-witness.json" \
             --with sarif_files="gitleaks.sarif.json,opengrep.sarif.json" \
             --with olm_cat="cat-api.uds-mil.us" \
-            --with olm_org="defenseunicorns-labs"
+            --with olm_org="enxoco"
 
       - name: Publish zarf package
         if: false
         run: |
           uds run publish:zarf-package \
-            --with registry_org="defenseunicorns-labs" \
+            --with registry_org="enxoco" \
             --with registry_user_id="${{ secrets.REGISTRY_USER_ID }}" \
             --with registry_password="${{ secrets.REGISTRY_PASSWORD }}"
 
