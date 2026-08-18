@@ -42,7 +42,7 @@ jobs:
       - run: |
           uds run olm:generate-fulcio-token \
             --with olm_cat="cat-api.uds-mil.us" \
-            --with olm_org="defenseunicorns-labs" \
+            --with olm_org="enxoco" \
             --with github_token="${{ secrets.GITHUB_TOKEN }}"
       - name: Lint
         run: uds run attest:lint
