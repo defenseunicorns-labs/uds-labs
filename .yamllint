@@ -6,6 +6,7 @@ yaml-files:
 
 ignore:
   - "chart/templates/**"
+  - "packages/vm-images/chart/templates/**"
 
 rules:
   anchors: enable

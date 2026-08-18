@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/enxoco/uds-lab-platform/internal/sizing"
+	"github.com/defenseunicorns-labs/uds-labs/internal/sizing"
 )
 
 // TestScenarioSizesNormalize loads every bundled scenario and asserts its

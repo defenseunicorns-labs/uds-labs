@@ -31,12 +31,12 @@ Split the platform into two binaries:
 
 `LabSession` CRD carries all session metadata as spec/annotations: `sessionID`, `scenarioID`, `userID`, `size`, `expiresAt`. VMI annotations mirror this for k8s-native state recovery — operator reconstructs in-memory state by listing VMIs on startup.
 
-All VMIs and their Services are created in a dedicated namespace (`uds-lab-vms`) with NetworkPolicy restricting VMI-to-VMI traffic while permitting cluster service access (CoreDNS, Istio).
+All VMIs and their Services are created in a dedicated namespace (`uds-labs-vms`) with NetworkPolicy restricting VMI-to-VMI traffic while permitting cluster service access (CoreDNS, Istio).
 
 ## Consequences
 
 - Server is stateless — restarts are safe, no session loss.
 - Operator crash recovery is free — VMIs survive pod restarts, operator reconciles on resume.
-- Clean RBAC boundary: server needs CRUD on `LabSession` only; operator needs create/delete/watch on VMI, Service, NetworkPolicy in `uds-lab-vms` namespace.
+- Clean RBAC boundary: server needs CRUD on `LabSession` only; operator needs create/delete/watch on VMI, Service, NetworkPolicy in `uds-labs-vms` namespace.
 - Adding a new provider (e.g., VMSS) requires only a new operator provider implementation — server is unchanged.
 - Two binaries to build, deploy, and version — acceptable tradeoff for separation of concerns.

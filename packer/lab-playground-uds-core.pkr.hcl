@@ -15,7 +15,7 @@ variable "hcloud_token" {
 
 variable "tools_image" {
   type        = string
-  description = "uds-lab-playground-tools snapshot name or ID"
+  description = "uds-labs-playground-tools snapshot name or ID"
   default     = env("TOOLS_IMAGE")
 }
 
@@ -29,9 +29,9 @@ source "hcloud" "playground-uds-core" {
   image         = var.tools_image
   location      = var.location
   server_type   = "ccx13"
-  snapshot_name = "uds-lab-playground-uds-core-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
+  snapshot_name = "uds-labs-playground-uds-core-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
   snapshot_labels = {
-    role = "uds-lab-playground"
+    role = "uds-labs-playground"
     tier = "uds-core"
   }
   ssh_username = "root"

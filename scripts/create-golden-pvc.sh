@@ -13,7 +13,7 @@
 #   ./scripts/create-golden-pvc.sh
 #
 # Skip a tier by leaving its env var unset.
-# Override namespace: GOLDEN_NAMESPACE=uds-lab-vms (default)
+# Override namespace: GOLDEN_NAMESPACE=uds-labs-vms (default)
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ log()  { echo -e "${GREEN}[$(date '+%H:%M:%S')]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 die()  { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
-GOLDEN_NAMESPACE="${GOLDEN_NAMESPACE:-uds-lab-vms}"
+GOLDEN_NAMESPACE="${GOLDEN_NAMESPACE:-uds-labs-vms}"
 # Each tier gets its own port — no kill/rebind race between imports.
 PORT_BASE="${PORT_BASE:-18888}"
 PORT_UDS_CORE="${PORT_UDS_CORE:-18890}"
@@ -133,7 +133,7 @@ info = json.loads(r.stdout)
 print(info['virtual-size'])
 " 2>/dev/null || echo "0")
 
-  local disk_size="80Gi"
+  local disk_size="40Gi"
   if [ "$virtual_size_bytes" -gt 0 ] 2>/dev/null; then
     local gi=$(( (virtual_size_bytes + (1024**3 - 1)) / (1024**3) ))
     disk_size="${gi}Gi"
@@ -151,8 +151,8 @@ metadata:
   name: ${pvc_name}
   namespace: ${GOLDEN_NAMESPACE}
   labels:
-    lab.uds.dev/golden-pvc: "true"
-    lab.uds.dev/tier: ${tier}
+    labs.uds.dev/golden-pvc: "true"
+    labs.uds.dev/tier: ${tier}
 spec:
   source:
     http:

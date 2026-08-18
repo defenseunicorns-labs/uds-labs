@@ -1,23 +1,52 @@
 domain: uds.dev
-image: ghcr.io/enxoco/uds-lab-platform:0.4.0
+image: ghcr.io/defenseunicorns-labs/uds-labs:0.4.1
 # Zarf's transformed tag is stable for a given source reference. Always check
 # the package registry so same-version local redeploys run the rebuilt image.
 imagePullPolicy: Always
-vmNamespace: uds-lab-vms
-sessionTTLMinutes: 60
+vmNamespace: uds-labs-vms
+sessionTTLMinutes: 240
+maxActiveSessions: 4
 
 # Provider backend: "kubevirt" (production) or "pod" (dev / no nested-virt).
-# KubeVirt-specific RBAC and the golden-PVC config are only rendered when
-# provider is "kubevirt".
 provider: kubevirt
 
-# KubeVirt-only: golden PVC names that CDI clones per session.
-# Ignored when provider != "kubevirt".
-# These names match what create-golden-pvc.sh produces.
+# Portable scheduling controls. Environment-specific labels and taints belong
+# in bundle/CustomerDeployment overrides, not these defaults.
+serverPlacement:
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+operatorPlacement:
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+vmiPlacement:
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# KubeVirt-only: golden PVC names that CDI clones per Session.
 goldenPVCs:
   base: golden-base
-  tools: golden-base   # alias — tools tier uses the same base image
+  tools: golden-base
   uds-core: golden-uds-core
-goldenPVCNamespace: ""   # defaults to vmNamespace
-# Usable session-disk size. CDI adds filesystem overhead to the allocated PVC.
-goldenPVCDiskSize: "80Gi"
+goldenPVCNamespace: ""
+# Must be at least as large as the largest golden source. CDI applies the same
+# filesystem overhead to this request and the 40Gi golden UDS Core import.
+goldenPVCDiskSize: 40Gi
+# Empty preserves portability by using the cluster default. AKS integration
+# overrides this to managed-csi-premium.
+storageClass: ""
+
+# Public internet remains available, but these ranges are excluded. Add the
+# cluster pod/service, VNet, and organization-internal CIDRs per environment.
+blockedEgressCIDRs:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - 169.254.0.0/16
+  - 168.63.129.16/32
+
+# UDS Core enforces membership before requests reach the application.
+auth:
+  allowedGroups: []

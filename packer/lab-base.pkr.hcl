@@ -23,9 +23,9 @@ source "hcloud" "lab-base" {
   image         = "ubuntu-24.04"
   location      = var.location
   server_type   = "cpx11"
-  snapshot_name = "uds-lab-base-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
+  snapshot_name = "uds-labs-base-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
   snapshot_labels = {
-    role = "uds-lab-base"
+    role = "uds-labs-base"
   }
   ssh_username = "root"
 }

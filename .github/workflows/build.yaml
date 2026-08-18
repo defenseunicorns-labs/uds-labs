@@ -1,9 +1,9 @@
 name: CI
 
 # Artifacts produced by this workflow:
-#   - zarf-package-uds-lab-platform-amd64-<version>.tar.zst  → published to UDS Army pipeline
+#   - zarf-package-uds-labs-amd64-<version>.tar.zst  → published to UDS Army pipeline
 #
-# The lab-platform image is built locally and embedded in the zarf package by
+# The uds-labs image is built locally and embedded in the zarf package by
 # `zarf package create`. It is NOT pushed to GHCR separately — the zarf package
 # and UDS bundle are the sole release artifacts.
 #
@@ -61,14 +61,14 @@ jobs:
       #   uds run vouch:package ...
       #   uds run publish:zarf-package ...
 
-      # Build the lab-platform Docker image into the local daemon so zarf package
+      # Build the uds-labs Docker image into the local daemon so zarf package
       # create can embed it. VM images are pulled from ghcr.io at create time.
       - name: Build image
         if: false
         run: uds run build-image
 
-      # Builds the single zarf package (lab-server + vm-image-server + golden-pvcs).
-      # VM images must already exist in ghcr.io or local Docker daemon.
+      # Builds the UDS Labs server/operator Zarf package.
+      # The separate VM image package is assembled by build-vm-images-package.
       # The UDS bundle (bundle/) must be built on internal DU infrastructure.
       - name: Build zarf package
         if: false
@@ -100,4 +100,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "v${VERSION}" \
             --generate-notes \
-            "zarf-package-uds-lab-platform-amd64-${VERSION}.tar.zst"
+            "zarf-package-uds-labs-amd64-${VERSION}.tar.zst"

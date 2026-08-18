@@ -1,7 +1,7 @@
 apiVersion: uds.dev/v1alpha1
 kind: Package
 metadata:
-  name: uds-lab-platform
+  name: uds-labs
   namespace: {{ .Release.Namespace }}
 
 spec:
@@ -20,12 +20,17 @@ spec:
     #
     # This is a cluster-level operation that must be performed by a cluster
     # admin until UDS Core adds per-path authservice bypass to the Package spec.
-    - clientId: uds-lab-platform
-      name: UDS Lab Platform
+    - clientId: uds-labs
+      name: UDS Labs
       redirectUris:
-        - "https://lab.{{ .Values.domain }}/login"
+        - "https://labs.{{ .Values.domain }}/login"
       enableAuthserviceSelector:
-        app: lab-platform
+        app: uds-labs
+{{- with .Values.auth.allowedGroups }}
+      groups:
+        anyOf:
+{{ toYaml . | nindent 10 }}
+{{- end }}
       protocolMappers:
         - name: groups
           protocol: openid-connect
@@ -46,9 +51,9 @@ spec:
         remoteGenerated: KubeAPI
         description: Kubernetes API server
     expose:
-      - service: lab-platform
+      - service: uds-labs
         selector:
-          app: lab-platform
-        host: lab
+          app: uds-labs
+        host: labs
         gateway: tenant
         port: 8080

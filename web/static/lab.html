@@ -519,7 +519,7 @@
     async function pauseLab() {
       document.getElementById('confirm-overlay').style.display = 'none';
       document.getElementById('teardown-overlay').style.display = 'flex';
-      document.querySelector('#teardown-overlay div:last-child').textContent = 'Saving your VM snapshot…';
+      document.querySelector('#teardown-overlay div:last-child').textContent = 'Pausing compute and preserving your lab disk…';
       clearInterval(timerInterval);
       clearInterval(pollInterval);
       clearInterval(servicesPollInterval);

@@ -1,0 +1,29 @@
+# Resource overrides for standalone UDS Core on a single-node local k3s cluster.
+istio-controlplane:
+  istiod:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+    global:
+      proxy:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+
+pepr-uds-core:
+  module:
+    watcher:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    admission:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi

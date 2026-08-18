@@ -28,7 +28,7 @@ log "Tenant gateway: $TENANT_IP"
 PATCH=$(cat <<EOF
 ${ADMIN_IP} keycloak.admin.uds.dev
 ${TENANT_IP} sso.uds.dev
-${TENANT_IP} lab.uds.dev
+${TENANT_IP} labs.uds.dev
 EOF
 )
 

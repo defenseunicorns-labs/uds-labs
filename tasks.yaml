@@ -36,8 +36,9 @@ tasks:
             exit 0
           fi
           echo "Cleaning build artifacts..."
-          rm -f zarf-package-*.tar.zst lab-server.tar uds-lab-platform-*.tar
-          rm -f bundle/uds-bundle-*.tar.zst
+          rm -f zarf-package-*.tar.zst lab-server.tar uds-labs-*.tar
+          rm -f packages/vm-images/base.tar packages/vm-images/uds-core.tar
+          rm -f bundle/uds-bundle-*.tar.zst bundle/local/uds-bundle-*.tar.zst
           rm -rf ~/.cache/zarf-tmp
           echo "Done."
 
@@ -107,11 +108,11 @@ tasks:
     description: Verify required tools, KVM access, package inputs, and image config
     inputs:
       kubevirt_pkg_dir:
-        description: Path to local KubeVirt package directory
-        default: $HOME/src/github.com/uds-packages/kubevirt
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       cdi_package:
-        description: Path to prebuilt CDI Zarf package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - description: Check tools, KVM, package artifacts, and image config
         cmd: |
@@ -132,12 +133,11 @@ tasks:
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
-          VM_SERVER=packages/vm-images/manifests/image-server.yaml
-          VM_MANIFEST=packages/vm-images/manifests/golden-pvcs.yaml
-          test -f "$VM_SERVER" || { echo "ERROR: missing $VM_SERVER" >&2; exit 1; }
-          test -f "$VM_MANIFEST" || { echo "ERROR: missing $VM_MANIFEST" >&2; exit 1; }
-          rg -q 'image: ghcr.io/enxoco/lab-vm-images/base:' "$VM_SERVER"
-          rg -q 'image: ghcr.io/enxoco/lab-vm-images/uds-core:' "$VM_SERVER"
+          VM_MANIFEST=$(mktemp)
+          trap 'rm -f "$VM_MANIFEST"' EXIT
+          helm template vm-images packages/vm-images/chart > "$VM_MANIFEST"
+          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/base:' "$VM_MANIFEST"
+          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/uds-core:' "$VM_MANIFEST"
           rg -q 'source:' "$VM_MANIFEST"
           rg -q 'http:' "$VM_MANIFEST"
           if rg -q 'registry:|secretRef:|ZARF_REGISTRY|CDI_REGISTRY|zarf-docker-registry' "$VM_MANIFEST"; then
@@ -153,21 +153,21 @@ tasks:
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
-          GOCACHE=/tmp/uds-lab-go-cache go test . -run 'TestHelmChart|TestVMImagePackage|TestApplicationImage'
+          GOCACHE=/tmp/uds-labs-go-cache go test . -run 'TestHelmChart|TestVMImage|TestDevelopmentBundle|TestLocalE2E|TestApplicationImage'
           helm lint chart
-          helm template lab-platform chart \
-            --namespace lab-platform \
+          helm lint packages/vm-images/chart
+          helm template uds-labs chart \
+            --namespace uds-labs \
             --set domain=example.test \
             --set provider=kubevirt \
             >/dev/null
+          uds inspect bundle/local/uds-bundle.yaml --no-progress --no-color >/dev/null
       - description: Lint and render Zarf package definitions
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
-          VERSION=$(yq -r '.metadata.version' zarf.yaml)
-          uds zarf dev lint . --set VM_IMAGE_TAG="$VERSION"
+          uds zarf dev lint .
           uds zarf dev inspect manifests . \
-            --create-set VM_IMAGE_TAG="$VERSION" \
             --deploy-set-variables DOMAIN=example.test \
             --deploy-set-variables PROVIDER=kubevirt \
             >/dev/null
@@ -328,6 +328,13 @@ tasks:
               break
             fi
             cat "$ZARF_INIT_LOG"
+            if grep -q 'requires a zarf-init package, but one was not found' "$ZARF_INIT_LOG"; then
+              ZARF_VERSION=$(zarf version 2>/dev/null | head -1)
+              INIT_PKG="oci://ghcr.io/zarf-dev/packages/init:${ZARF_VERSION}"
+              echo "Zarf init package missing locally — initializing from ${INIT_PKG}..." >&2
+              zarf init "$INIT_PKG" --confirm
+              break
+            fi
             if ! grep -q 'failed to delete injector resources: configmaps "zarf-payload-' "$ZARF_INIT_LOG"; then
               exit 1
             fi
@@ -345,37 +352,43 @@ tasks:
         maxTotalSeconds: 600
 
   - name: build-kubevirt
-    description: Build KubeVirt Zarf package in the KubeVirt package directory
+    description: Build and stage the placement-enabled UDM KubeVirt package
     inputs:
       dir:
-        description: Path to KubeVirt package directory
-        default: $HOME/src/github.com/uds-packages/kubevirt
+        description: Path to the UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       skip_if_exists:
-        description: Skip rebuild if a package tarball already exists (set to 1)
+        description: Skip rebuild if the dev package already exists (set to 1)
         default: "0"
       rebuild:
         description: Rebuild package (1 = rebuild)
         default: "1"
     actions:
-      - description: Build KubeVirt package
+      - description: Build KubeVirt package and copy it into the bundle input directory
         cmd: |
-          cd "${{ .inputs.dir }}" || exit
-          if [ "${{ .inputs.skip_if_exists }}" = "1" ] || [ "${{ .inputs.rebuild }}" != "1" ]; then
-            EXISTING=$(find . -maxdepth 1 -type f -name 'zarf-package-kubevirt-amd64-*-upstream.tar.zst' -print | sort | tail -1)
-            if [ -n "$EXISTING" ]; then
-              echo "Existing package found ($EXISTING) — skipping rebuild"
-              exit 0
-            fi
+          # shellcheck shell=bash
+          set -euo pipefail
+          ROOT=$(pwd)
+          cd "${{ .inputs.dir }}"
+          PACKAGE=./zarf-package-kubevirt-amd64-dev-upstream.tar.zst
+          if [ "${{ .inputs.skip_if_exists }}" != "1" ] && [ "${{ .inputs.rebuild }}" = "1" ]; then
+            zarf package create . -f upstream --confirm
+          elif [ -f "$PACKAGE" ]; then
+            echo "Existing package found ($PACKAGE) — skipping rebuild"
           fi
-          zarf package create . -f upstream --confirm
+          [ -f "$PACKAGE" ] || { echo "ERROR: KubeVirt dev package not found after build: $PWD/$PACKAGE" >&2; exit 1; }
+          mkdir -p "$ROOT/bundle/kubevirt"
+          find "$ROOT/bundle/kubevirt" -maxdepth 1 -type f -name 'zarf-package-kubevirt-*.tar.zst' -delete
+          cp "$PACKAGE" "$ROOT/bundle/kubevirt/zarf-package-kubevirt-amd64-dev-upstream.tar.zst"
+          echo "Staged $PWD/$PACKAGE for the UDS Labs bundle"
         maxTotalSeconds: 3600
 
   - name: stage-cdi-package
-    description: Stage a prebuilt CDI Zarf package for bundle creation
+    description: Stage the placement-enabled UDM CDI package for bundle creation
     inputs:
       package:
-        description: Path to prebuilt CDI Zarf package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        description: Path to the UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - description: Copy CDI package into bundle input directory
         cmd: |
@@ -385,13 +398,14 @@ tasks:
           [ -f "$PACKAGE" ] || { echo "ERROR: CDI package not found: $PACKAGE" >&2; exit 1; }
           mkdir -p bundle/cdi
           find bundle/cdi -maxdepth 1 -type f -name 'zarf-package-cdi-*.tar.zst' -delete
-          cp "$PACKAGE" bundle/cdi/zarf-package-cdi-amd64-dev.tar.zst
-          echo "Staged $PACKAGE as bundle/cdi/zarf-package-cdi-amd64-dev.tar.zst"
+          cp "$PACKAGE" bundle/cdi/zarf-package-cdi-amd64-dev-upstream.tar.zst
+          echo "Staged $PACKAGE as bundle/cdi/zarf-package-cdi-amd64-dev-upstream.tar.zst"
         maxTotalSeconds: 1200
 
   - name: build-vm-images
     description: |
-      Build VM image server container images from packer qcow2 outputs.
+      Build VM image server container images from packer qcow2 outputs and
+      export image archives for fast, deterministic Zarf package assembly.
       Images are tagged for ghcr.io and loaded into the local Docker daemon.
       Run uds run build-images first to produce the qcow2 files.
       Push to registry with: uds run push-vm-images
@@ -422,16 +436,19 @@ tasks:
             TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
           fi
           build_image() {
-            local name="$1" dockerfile="$2" context_dir="$3"
+            local name="$1" dockerfile="$2" context_dir="$3" archive="$4"
+            local image="ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
             if [ ! -d "$context_dir" ] || ! find "$context_dir" -maxdepth 1 -type f -name '*.qcow2' -print -quit | grep -q .; then
               echo "SKIP: no qcow2 in $context_dir — skipping $name"
               return 0
             fi
-            echo "Building ghcr.io/enxoco/lab-vm-images/${name}:${TAG}..."
-            docker build -t "ghcr.io/enxoco/lab-vm-images/${name}:${TAG}" -f "$dockerfile" "$context_dir"
+            echo "Building ${image}..."
+            docker build -t "$image" -f "$dockerfile" "$context_dir"
+            echo "Exporting ${image} to ${archive}..."
+            docker save "$image" -o "$archive"
           }
-          build_image base     packages/vm-images/Dockerfile.base     "$(dirname "${{ .inputs.base_qcow2 }}")"
-          build_image uds-core packages/vm-images/Dockerfile.uds-core "$(dirname "${{ .inputs.uds_core_qcow2 }}")"
+          build_image base     packages/vm-images/Dockerfile.base     "$(dirname "${{ .inputs.base_qcow2 }}")"     packages/vm-images/base.tar
+          build_image uds-core packages/vm-images/Dockerfile.uds-core "$(dirname "${{ .inputs.uds_core_qcow2 }}")" packages/vm-images/uds-core.tar
 
   - name: push-vm-images
     description: Push VM image server container images to ghcr.io
@@ -448,64 +465,130 @@ tasks:
             TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
           fi
           for name in base uds-core; do
-            echo "Pushing ghcr.io/enxoco/lab-vm-images/${name}:${TAG}..."
-            docker push "ghcr.io/enxoco/lab-vm-images/${name}:${TAG}"
+            echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}..."
+            docker push "ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
           done
 
   - name: build-image
-    description: Build the lab-platform Docker image tagged for ghcr.io
+    description: Build the uds-labs Docker image tagged for ghcr.io
     actions:
       - description: Build Docker image
         cmd: |
           VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker build -t "ghcr.io/enxoco/uds-lab-platform:${VERSION}" .
+          docker build -t "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}" .
         maxTotalSeconds: 600
 
   - name: push-image
-    description: Push the lab-platform Docker image to ghcr.io
+    description: Push the uds-labs Docker image to ghcr.io
     actions:
       - description: Push image to registry
         cmd: |
           VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker push "ghcr.io/enxoco/uds-lab-platform:${VERSION}"
+          docker push "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
         maxTotalSeconds: 600
 
   - name: build-lab-package
-    description: Build the uds-lab-platform Zarf package (includes lab-server, vm-image-server, golden-pvcs)
-    inputs:
-      vm_image_tag:
-        description: VM image tag (defaults to package version)
-        default: ""
+    description: Build the uds-labs Zarf package (lab server, operator, CRD, RBAC)
     actions:
       - description: Build Zarf package
         cmd: |
-          TAG="${{ .inputs.vm_image_tag }}"
-          if [ -z "$TAG" ]; then
-            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          fi
           mkdir -p ~/.cache/zarf-tmp
-          zarf package create . --confirm --set VM_IMAGE_TAG="$TAG" --tmpdir ~/.cache/zarf-tmp
+          zarf package create . --confirm --tmpdir ~/.cache/zarf-tmp
         maxTotalSeconds: 600
 
+  - name: build-vm-images-package
+    description: Build a local VM-image package or stage the published version consumed by the UDS bundle
+    inputs:
+      local:
+        description: Build from local image archives (1) or pull the published package (0)
+        default: "1"
+      repository:
+        description: OCI repository containing published VM-image packages
+        default: ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images
+    actions:
+      - description: Stage the VM images Zarf package
+        cmd: |
+          set -euo pipefail
+          VERSION=$(grep '^  version:' packages/vm-images/zarf.yaml | head -1 | awk '{print $2}')
+          mkdir -p packages/vm-images
+
+          if [ "${{ .inputs.local }}" != "1" ]; then
+            EXISTING=$(find packages/vm-images -maxdepth 1 -type f -name "zarf-package-uds-labs-vm-images-*-${VERSION}.tar.zst" -print -quit)
+            if [ -n "$EXISTING" ]; then
+              echo "Reusing staged VM-image package $EXISTING"
+              exit 0
+            fi
+            REPOSITORY="${{ .inputs.repository }}"
+            echo "Pulling published VM-image package ${REPOSITORY}:${VERSION}"
+            zarf package pull "oci://${REPOSITORY}:${VERSION}" --output-directory packages/vm-images
+            exit 0
+          fi
+
+          find packages/vm-images -maxdepth 1 -type f -name 'zarf-package-uds-labs-vm-images-*.tar.zst' -delete
+          for archive in packages/vm-images/base.tar packages/vm-images/uds-core.tar; do
+            [ -f "$archive" ] || { echo "ERROR: missing $archive — run 'uds run build-vm-images' first" >&2; exit 1; }
+          done
+          mkdir -p ~/.cache/zarf-tmp
+          zarf package create packages/vm-images --confirm --skip-sbom --tmpdir ~/.cache/zarf-tmp --output packages/vm-images
+        maxTotalSeconds: 3600
+
   - name: build-bundle
-    description: Build the UDS bundle from bundle/
+    description: Build the selected UDS bundle profile
+    inputs:
+      profile:
+        description: Bundle profile to build (default or local)
+        default: default
     actions:
       - description: Create UDS bundle
         cmd: |
           BUNDLE_TMPDIR="${ZARF_TMPDIR:-$HOME/.cache/zarf-tmp}"
           mkdir -p "$BUNDLE_TMPDIR"
-          uds create bundle --confirm --tmpdir "$BUNDLE_TMPDIR"
-        maxTotalSeconds: 600
+          case "${{ .inputs.profile }}" in
+            default) BUNDLE_DIR=bundle ;;
+            local) BUNDLE_DIR=bundle/local ;;
+            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
+          esac
+          uds create "$BUNDLE_DIR" --confirm --tmpdir "$BUNDLE_TMPDIR"
+        # Bundle assembly embeds the large VM image package built above.
+        maxTotalSeconds: 3600
 
   - name: deploy-bundle
-    description: Deploy the latest UDS bundle tarball from bundle/
+    description: Deploy the latest bundle for the selected profile
+    inputs:
+      profile:
+        description: Bundle profile to deploy (default or local)
+        default: default
+      config:
+        description: Path to the ignored, environment-specific default-profile config
+        default: bundle/uds-config.yaml
     actions:
       - description: Deploy bundle
         cmd: |
-          BUNDLE=$(find bundle -maxdepth 1 -type f -name 'uds-bundle-uds-lab-platform-*.tar.zst' -print | sort | tail -1)
-          [ -n "$BUNDLE" ] || { echo "ERROR: no bundle found in bundle/ — run build-bundle first"; exit 1; }
-          echo "Deploying: $BUNDLE"
-          uds deploy "$BUNDLE" --confirm
+          case "${{ .inputs.profile }}" in
+            default)
+              BUNDLE_DIR=bundle
+              BUNDLE_NAME=uds-labs
+              ;;
+            local)
+              BUNDLE_DIR=bundle/local
+              BUNDLE_NAME=uds-labs-local
+              ;;
+            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
+          esac
+          BUNDLE=$(find "$BUNDLE_DIR" -maxdepth 1 -type f -name "uds-bundle-${BUNDLE_NAME}-*.tar.zst" -print | sort | tail -1)
+          [ -n "$BUNDLE" ] || { echo "ERROR: no ${BUNDLE_NAME} bundle found in ${BUNDLE_DIR}/ — run build-bundle first"; exit 1; }
+
+          if [ "${{ .inputs.profile }}" = "local" ]; then
+            echo "Deploying local profile: $BUNDLE"
+            uds deploy "$BUNDLE" --confirm
+            exit 0
+          fi
+
+          CONFIG="${{ .inputs.config }}"
+          case "$CONFIG" in /*) ;; *) CONFIG="$(pwd)/$CONFIG" ;; esac
+          [ -f "$CONFIG" ] || { echo "ERROR: missing deployment config: $CONFIG — copy bundle/uds-config.example.yaml and customize it"; exit 1; }
+          echo "Deploying: $BUNDLE with $CONFIG"
+          UDS_CONFIG="$CONFIG" uds deploy "$BUNDLE" --confirm
         maxTotalSeconds: 3600
 
   - name: wait-kubevirt
@@ -522,40 +605,40 @@ tasks:
       after any Helm upgrade: uds run patch-demo-routes
     inputs:
       namespace:
-        description: Namespace containing the lab-platform Package CR
-        default: lab-platform
+        description: Namespace containing the uds-labs Package CR
+        default: uds-labs
     actions:
       - description: Wait for authservice AuthorizationPolicy
         cmd: |
           NS="${{ .inputs.namespace }}"
           deadline=$(( $(date +%s) + 120 ))
-          until kubectl get authorizationpolicy uds-lab-platform-authservice -n "$NS" >/dev/null 2>&1; do
+          until kubectl get authorizationpolicy uds-labs-authservice -n "$NS" >/dev/null 2>&1; do
             [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for authservice policy"; exit 1; }
             sleep 3
           done
-          echo "uds-lab-platform-authservice ready"
+          echo "uds-labs-authservice ready"
         maxTotalSeconds: 130
       - description: Wait for jwt-authz AuthorizationPolicy
         cmd: |
           NS="${{ .inputs.namespace }}"
           deadline=$(( $(date +%s) + 120 ))
-          until kubectl get authorizationpolicy uds-lab-platform-jwt-authz -n "$NS" >/dev/null 2>&1; do
+          until kubectl get authorizationpolicy uds-labs-jwt-authz -n "$NS" >/dev/null 2>&1; do
             [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for jwt-authz policy"; exit 1; }
             sleep 3
           done
-          echo "uds-lab-platform-jwt-authz ready"
+          echo "uds-labs-jwt-authz ready"
         maxTotalSeconds: 130
       - description: Patch authservice policy to exclude demo routes
         maxTotalSeconds: 30
         cmd: |
-          kubectl patch authorizationpolicy uds-lab-platform-authservice \
+          kubectl patch authorizationpolicy uds-labs-authservice \
             -n "${{ .inputs.namespace }}" \
             --type=json \
             -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
       - description: Patch jwt-authz policy to exclude demo routes
         maxTotalSeconds: 30
         cmd: |
-          kubectl patch authorizationpolicy uds-lab-platform-jwt-authz \
+          kubectl patch authorizationpolicy uds-labs-jwt-authz \
             -n "${{ .inputs.namespace }}" \
             --type=json \
             -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
@@ -574,7 +657,7 @@ tasks:
         default: packer/output/uds-core/lab-playground-uds-core.qcow2
       namespace:
         description: Namespace for golden PVCs
-        default: uds-lab-vms
+        default: uds-labs-vms
     actions:
       - description: Import golden PVCs
         maxTotalSeconds: 600
@@ -612,39 +695,18 @@ tasks:
   # k3s install requires sudo — run `sudo -v` before starting if your sudo
   # session has timed out.
 
-  - name: cluster-up
-    description: |
-      Full cluster setup: preflight, k3s, MetalLB, zarf init, KubeVirt, bundle deploy, demo patch, golden PVCs, verify.
-      WIPE_CLUSTER=0 — keep existing k3s, skip reinstall (also skips MetalLB and zarf init).
-      SKIP_GOLDEN_PVC=1 — skip the optional host HTTP fallback (default: use packaged image servers).
+  - name: bootstrap-local-cluster
+    description: Local-only bootstrap for k3s, MetalLB, and Zarf init. Bundle deploy remains the canonical test path.
     inputs:
       WIPE_CLUSTER:
-        description: Wipe and reinstall k3s (1 = wipe)
-        default: "1"
-      SKIP_GOLDEN_PVC:
-        description: Force-skip host HTTP fallback (default 1 = use packaged image servers)
+        description: Wipe and reinstall k3s (1 = wipe/bootstrap, 0 = skip bootstrap)
         default: "1"
       KUBEVIRT_PKG_DIR:
-        description: Path to local KubeVirt package directory
-        default: $HOME/src/github.com/uds-packages/kubevirt
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to prebuilt CDI Zarf package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
-      BUILD_IMAGES:
-        description: Build local packer images (1 = build)
-        default: "0"
-      SKIP_BASE:
-        description: Skip base image build
-        default: "0"
-      SKIP_UDS_CORE:
-        description: Skip UDS Core image build
-        default: "0"
-      VM_IMAGE_TAG:
-        description: VM image tag (defaults to package version)
-        default: ""
-      LOCAL_VM_IMAGES:
-        description: Build and embed local VM image-server containers instead of pulling published images
-        default: "0"
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - task: preflight
         with:
@@ -662,6 +724,69 @@ tasks:
       - task: zarf-init
         with:
           run: ${{ .inputs.WIPE_CLUSTER }}
+
+  - name: deploy-local-uds-core
+    description: Deploy pinned standalone UDS Core packages onto the existing bare-k3s cluster
+    inputs:
+      run:
+        description: Deploy UDS Core (1) or preserve the existing installation (0)
+        default: "1"
+      base_package:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      identity_package:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+    actions:
+      - description: Deploy standalone UDS Core packages
+        cmd: |
+          if [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Preserving existing UDS Core installation"
+            exit 0
+          fi
+          uds zarf package deploy "${{ .inputs.base_package }}" \
+            --set-variables DOMAIN=uds.dev \
+            --values bundle/local/core-base-values.yaml \
+            --confirm
+          uds zarf package deploy "${{ .inputs.identity_package }}" \
+            --set-variables DOMAIN=uds.dev \
+            --values bundle/local/core-identity-values.yaml \
+            --confirm
+          kubectl wait --for=condition=Ready package/keycloak -n keycloak --timeout=10m
+          kubectl wait --for=condition=Ready package/authservice -n authservice --timeout=10m
+        maxTotalSeconds: 1800
+
+  - name: deploy-stack
+    description: Build and deploy the UDS bundle, then run read-only cluster verification.
+    inputs:
+      KUBEVIRT_PKG_DIR:
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
+      CDI_PACKAGE:
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+      BUILD_IMAGES:
+        description: Build local packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip base image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip UDS Core image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build and embed local VM image-server containers instead of pulling published images
+        default: "0"
+      REBUILD_KUBEVIRT:
+        description: Rebuild KubeVirt package (1 = rebuild)
+        default: "1"
+      BUNDLE_PROFILE:
+        description: Bundle profile to build and deploy (default or local)
+        default: default
+    actions:
       - task: build-images
         with:
           build: ${{ .inputs.BUILD_IMAGES }}
@@ -670,7 +795,7 @@ tasks:
       - task: build-kubevirt
         with:
           dir: ${{ .inputs.KUBEVIRT_PKG_DIR }}
-          rebuild: ${{ .inputs.WIPE_CLUSTER }}
+          rebuild: ${{ .inputs.REBUILD_KUBEVIRT }}
       - task: stage-cdi-package
         with:
           package: ${{ .inputs.CDI_PACKAGE }}
@@ -680,16 +805,61 @@ tasks:
           tag: ${{ .inputs.VM_IMAGE_TAG }}
       - task: build-image
       - task: build-lab-package
+      - task: build-vm-images-package
         with:
-          vm_image_tag: ${{ .inputs.VM_IMAGE_TAG }}
+          local: ${{ .inputs.LOCAL_VM_IMAGES }}
       - task: build-bundle
-      - task: deploy-bundle
-      - task: wait-kubevirt
-      - task: patch-demo-routes
-      - task: populate-golden-pvcs
         with:
-          skip: ${{ .inputs.SKIP_GOLDEN_PVC }}
+          profile: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: deploy-bundle
+        with:
+          profile: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: wait-kubevirt
       - task: verify-cluster
+
+  - name: cluster-up
+    description: "Backward-compatible alias: bootstrap local k3s, then deploy the UDS bundle."
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe/bootstrap)
+        default: "1"
+      KUBEVIRT_PKG_DIR:
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
+      CDI_PACKAGE:
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+      BUILD_IMAGES:
+        description: Build local packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip base image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip UDS Core image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build and embed local VM image-server containers instead of pulling published images
+        default: "0"
+    actions:
+      - task: bootstrap-local-cluster
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+      - task: deploy-stack
+        with:
+          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          REBUILD_KUBEVIRT: ${{ .inputs.WIPE_CLUSTER }}
 
   # ── CoreDNS patch ─────────────────────────────────────────────────────────────
 
@@ -750,45 +920,39 @@ tasks:
         cmd: docker compose -f hack/proxy/docker-compose.yaml down
 
   # ── Fast redeploy (no cluster wipe) ──────────────────────────────────────────
-  # Rebuilds image + package + bundle, deploys, re-applies demo route patch.
-  # Use when iterating on server or operator code without wiping the cluster.
+  # Rebuilds and deploys through the UDS bundle.
+  # Use when iterating without wiping the cluster.
 
   - name: redeploy
-    description: Rebuild and redeploy only lab-platform without touching infrastructure packages
+    description: Rebuild and redeploy through the UDS bundle without rebuilding infra packages
     inputs:
       vm_image_tag:
         description: VM image tag (defaults to package version)
         default: ""
+      BUNDLE_PROFILE:
+        description: Bundle profile to redeploy
+        default: local
     actions:
-      - task: build-image
-      - task: build-lab-package
+      - task: deploy-stack
         with:
-          vm_image_tag: ${{ .inputs.vm_image_tag }}
-      - description: Deploy lab-platform package
-        cmd: |
-          PACKAGE=$(find . -maxdepth 1 -type f -name 'zarf-package-uds-lab-platform-amd64-*.tar.zst' -print | sort | tail -1)
-          [ -n "$PACKAGE" ] || { echo "ERROR: lab-platform package not found"; exit 1; }
-          zarf package deploy "$PACKAGE" --confirm
-      - task: patch-demo-routes
-      - description: Restart deployments
-        cmd: |
-          kubectl rollout restart deployment/lab-operator deployment/lab-platform -n lab-platform
-          echo ""
-          echo "Redeploy complete."
-          echo "  Logs: kubectl logs -n lab-platform -l app=lab-operator -f"
-        maxTotalSeconds: 120
+          BUILD_IMAGES: "0"
+          LOCAL_VM_IMAGES: "0"
+          VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
+          REBUILD_KUBEVIRT: "0"
+          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: smoke-test
 
   # ── Smoke test ───────────────────────────────────────────────────────────────
   # Run after every deploy to catch broken state before the user hits it.
   # Exits non-zero on any failure so CI and uds run dev surface problems early.
 
   - name: smoke-test
-    description: Verify the deployed stack is healthy (golden PVCs, auth patches, platform pod)
+    description: Verify the deployed stack is healthy (golden PVCs, platform pod, authservice)
     actions:
       - description: Check golden PVCs are Succeeded
         maxTotalSeconds: 1800
         cmd: |
-          NS="uds-lab-vms"
+          NS="uds-labs-vms"
           DEADLINE=$(( $(date +%s) + 1500 ))
           while true; do
             FAILED=0
@@ -832,37 +996,21 @@ tasks:
             fi
             sleep 10
           done
-      - description: Check AuthorizationPolicy demo-route patches
+      - description: Check uds-labs pod is Running
         maxTotalSeconds: 30
         cmd: |
-          FAILED=0
-          NS="lab-platform"
-          for pol in uds-lab-platform-authservice uds-lab-platform-jwt-authz; do
-            has_to=$(kubectl get authorizationpolicy "$pol" -n "$NS" \
-              -o jsonpath='{.spec.rules[0].to}' 2>/dev/null || echo "")
-            if [ -n "$has_to" ]; then
-              echo "  ✔ $pol has notPaths exemption"
-            else
-              echo "  ✘ $pol missing notPaths — /demo and /api/demo-sessions will require auth"
-              FAILED=1
-            fi
-          done
-          [ "$FAILED" = "0" ] || { echo "Fix: uds run patch-demo-routes"; exit 1; }
-      - description: Check lab-platform pod is Running
-        maxTotalSeconds: 30
-        cmd: |
-          NS="lab-platform"
-          NOT_RUNNING=$(kubectl get pods -n "$NS" -l app=lab-platform \
+          NS="uds-labs"
+          NOT_RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
             --field-selector=status.phase!=Running \
             -o name 2>/dev/null | head -5)
-          RUNNING=$(kubectl get pods -n "$NS" -l app=lab-platform \
+          RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
             --field-selector=status.phase=Running \
             -o name 2>/dev/null | head -1)
           if [ -n "$RUNNING" ] && [ -z "$NOT_RUNNING" ]; then
-            echo "  ✔ lab-platform pod Running"
+            echo "  ✔ uds-labs pod Running"
           else
-            echo "  ✘ lab-platform pod not Running"
-            kubectl get pods -n "$NS" -l app=lab-platform 2>/dev/null || true
+            echo "  ✘ uds-labs pod not Running"
+            kubectl get pods -n "$NS" -l app=uds-labs 2>/dev/null || true
             exit 1
           fi
       - description: Check authservice is running without OIDC errors
@@ -881,77 +1029,129 @@ tasks:
           elif [ -n "$ERRORS" ]; then
             echo "  ✘ authservice has OIDC errors — JWT verification will fail"
             echo "$ERRORS"
-            echo "    Fix: ./scripts/patch-coredns.sh"
+            echo "    Fix DNS for the configured bundle domain, then restart authservice if needed"
             exit 1
           else
             echo "  ⚠ authservice restarts: $RESTARTS — may indicate DNS/Keycloak issue"
             echo "    Check: kubectl logs -n authservice deploy/authservice"
           fi
 
-  # ── Full e2e dev workflow ─────────────────────────────────────────────────────
-  # Composes: build-images + cluster-up + patch-coredns + start-proxy + test user.
-  #
-  # Common invocations:
-  #   uds run dev                              # use upstream CDI and published VM package
-  #   uds run dev --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
-  #                                            # build and package local VM images
-  #   uds run dev --with WIPE_CLUSTER=0        # keep k3s, redeploy packages
-  #   uds run dev --with LOCAL_VM_IMAGES=1 --with WIPE_CLUSTER=0
+  # ── Full local E2E workflow ───────────────────────────────────────────────────
+  # Bare k3s → UDS Core → KubeVirt/CDI → VM images → UDS Labs → local access.
 
-  - name: dev
-    description: "Full e2e: set up cluster, deploy platform, configure access"
+  - name: local-e2e
+    description: "Full local E2E on bare k3s, including UDS Core and browser access"
     inputs:
-      BUILD_IMAGES:
-        description: Build local packer images (1 = build; default uses published VM images from registry)
-        default: "0"
-      SKIP_BASE:
-        description: Skip base image build
-        default: "0"
-      SKIP_UDS_CORE:
-        description: Skip UDS Core image build
-        default: "0"
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe)
         default: "1"
-      SKIP_GOLDEN_PVC:
-        description: Force-skip host HTTP fallback (default 1 = use packaged image servers)
-        default: "1"
+      KUBEVIRT_PKG_DIR:
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
+      CDI_PACKAGE:
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+      UDS_CORE_BASE_PACKAGE:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      UDS_CORE_IDENTITY_PACKAGE:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+      BUILD_IMAGES:
+        description: Build local Packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip the base Packer image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip the UDS Core Packer image build
+        default: "0"
       VM_IMAGE_TAG:
         description: VM image tag (defaults to package version)
         default: ""
       LOCAL_VM_IMAGES:
-        description: Build and embed local VM image-server containers instead of pulling published images
+        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
         default: "0"
-      CDI_PACKAGE:
-        description: Path to prebuilt CDI Zarf package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - task: clean-artifacts
         with:
           clean: ${{ .inputs.WIPE_CLUSTER }}
-      - task: cluster-up
+      - task: bootstrap-local-cluster
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          SKIP_GOLDEN_PVC: ${{ .inputs.SKIP_GOLDEN_PVC }}
+          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+      - task: deploy-local-uds-core
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+          base_package: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
+          identity_package: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
+      - task: deploy-stack
+        with:
+          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
           SKIP_BASE: ${{ .inputs.SKIP_BASE }}
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+          REBUILD_KUBEVIRT: ${{ .inputs.WIPE_CLUSTER }}
+          BUNDLE_PROFILE: local
       - task: patch-coredns
       - task: start-proxy
       - task: create-test-user
       - task: smoke-test
-      - description: Dev environment ready
+      - description: Local E2E environment ready
         cmd: |
           echo ""
-          echo "╔══════════════════════════════════════════════════════════╗"
-          echo "  UDS Lab Platform — dev environment ready"
-          echo ""
-          echo "  UI:    https://lab.uds.dev"
-          echo "  Admin: https://keycloak.admin.uds.dev"
-          echo ""
-          echo "  Test user: doug@uds.dev / unicorn123!@#UN"
-          echo "  Group:     /UDS Core/Admin"
-          echo "╚══════════════════════════════════════════════════════════╝"
+          echo "UDS Labs local E2E is ready"
+          echo "  UI:       https://labs.uds.dev"
+          echo "  User:     doug@uds.dev"
+          echo "  Password: unicorn123!@#UN"
+
+  - name: dev
+    description: Backward-compatible alias for local-e2e
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe)
+        default: "1"
+      KUBEVIRT_PKG_DIR:
+        description: Path to the placement-enabled UDM KubeVirt package directory
+        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
+      CDI_PACKAGE:
+        description: Path to the placement-enabled UDM CDI package artifact
+        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+      UDS_CORE_BASE_PACKAGE:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      UDS_CORE_IDENTITY_PACKAGE:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+      BUILD_IMAGES:
+        description: Build local Packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip the base Packer image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip the UDS Core Packer image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
+        default: "0"
+    actions:
+      - task: local-e2e
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
+          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+          UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
+          UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}

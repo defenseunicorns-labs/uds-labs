@@ -8,7 +8,12 @@ data:
     provider: {{ .Values.provider | default "kubevirt" | quote }}
 {{- if eq (default "kubevirt" .Values.provider) "kubevirt" }}
     goldenPVCNamespace: {{ .Values.goldenPVCNamespace | default .Values.vmNamespace | quote }}
-    goldenPVCDiskSize: {{ .Values.goldenPVCDiskSize | default "80Gi" | quote }}
+    goldenPVCDiskSize: {{ .Values.goldenPVCDiskSize | default "40Gi" | quote }}
+    storageClass: {{ .Values.storageClass | quote }}
+    vmiPlacement:
+{{ toYaml .Values.vmiPlacement | nindent 6 }}
+    blockedEgressCIDRs:
+{{ toYaml .Values.blockedEgressCIDRs | nindent 6 }}
     goldenPVCs:
     {{- range $tier, $pvc := .Values.goldenPVCs }}
       {{ $tier }}: {{ $pvc | quote }}

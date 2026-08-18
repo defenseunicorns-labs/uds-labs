@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: uds-lab-vms
+  name: uds-labs-vms
   labels:
-    app.kubernetes.io/part-of: uds-lab-platform
+    app.kubernetes.io/part-of: uds-labs
     # All lab VMIs, their Services, and NetworkPolicies live here (ADR-0011).
     # Kept separate from the platform server/operator namespace so RBAC and
     # NetworkPolicy can be scoped tightly.

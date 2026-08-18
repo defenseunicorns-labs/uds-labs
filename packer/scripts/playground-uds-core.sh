@@ -17,7 +17,7 @@ resize2fs /dev/vda1 || true
 
 # Pinned bundle version — bump intentionally to upgrade UDS Core.
 # Using :latest caused a silent 1.7→1.8 breakage; always pin.
-UDS_CORE_BUNDLE="oci://ghcr.io/defenseunicorns/packages/uds/bundles/k3d-core-slim-dev:1.7.0"
+UDS_CORE_BUNDLE="oci://ghcr.io/defenseunicorns/packages/uds/bundles/k3d-core-slim-dev:1.10.0"
 
 # ── Ensure Docker is running ───────────────────────────────────────────────────
 log "Starting Docker..."

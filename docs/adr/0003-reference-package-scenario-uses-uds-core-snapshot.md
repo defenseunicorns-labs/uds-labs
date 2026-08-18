@@ -13,7 +13,7 @@ The platform's image selection logic previously only applied pre-built playgroun
 
 ## Decision
 
-Add an `image` field to `scenario.yaml`. When set, the session manager uses `role=uds-lab-playground,tier=<image>` as the snapshot label selector, regardless of the `playground` flag. The `uds-reference-package` scenario sets `image: uds-core`.
+Add an `image` field to `scenario.yaml`. When set, the session manager uses `role=uds-labs-playground,tier=<image>` as the snapshot label selector, regardless of the `playground` flag. The `uds-reference-package` scenario sets `image: uds-core`.
 
 The session manager change is in `internal/session/manager.go`.
 

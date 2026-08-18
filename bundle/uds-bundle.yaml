@@ -1,92 +1,118 @@
-# INTERNAL USE ONLY - do not build or publish from public CI.
-#
-# This bundle depends on registry.uds-mil.us packages that are not accessible
-# from public GitHub Actions runners.
-# Build manually on internal DU infrastructure:
-#   uds run build-bundle
+# Development/validation bundle. AKS-specific scheduling belongs here, while
+# dependency package defaults remain platform-neutral.
 kind: UDSBundle
 metadata:
-  name: uds-lab-platform
-  description: UDS Lab Platform — interactive ISV packaging labs
-  version: "0.4.0"
+  name: uds-labs
+  description: UDS Labs AKS KubeVirt pilot
+  version: "0.4.1"
 
 packages:
-  - name: core-base
-    repository: ghcr.io/defenseunicorns/packages/uds/core-base
-    ref: 1.7.0-upstream
-    overrides:
-      pepr-uds-core:
-        module:
-          values:
-            - path: additionalIgnoredNamespaces
-              value:
-                - uds-dev-stack
-      istio-controlplane:
-        istiod:
-          variables:
-            - name: ISTIOD_CPU_REQUEST
-              value: 100m
-            - name: ISTIOD_MEMORY_REQUEST
-              value: 1024Mi
-            - name: PROXY_CPU_LIMIT
-              value: 2000m
-            - name: PROXY_CPU_REQUEST
-              value: 10m
-            - name: PROXY_MEMORY_LIMIT
-              value: 1024Mi
-            - name: PROXY_MEMORY_REQUEST
-              value: 40Mi
-
-  - name: core-identity-authorization
-    repository: ghcr.io/defenseunicorns/packages/uds/core-identity-authorization
-    ref: 1.7.0-upstream
-    overrides:
-      keycloak:
-        keycloak:
-          variables:
-            - name: KEYCLOAK_CPU_LIMIT
-              value: 1000m
-            - name: KEYCLOAK_CPU_REQUEST
-              value: 100m
-            - name: KEYCLOAK_MEMORY_LIMIT
-              value: 1Gi
-            - name: KEYCLOAK_MEMORY_REQUEST
-              value: 512Mi
-            - name: KEYCLOAK_WAYPOINT_CPU_REQUEST
-              value: 100m
-            - name: KEYCLOAK_WAYPOINT_HPA_ENABLED
-              value: false
-            - name: KEYCLOAK_WAYPOINT_MEMORY_REQUEST
-              value: 64Mi
-      authservice:
-        authservice:
-          variables:
-            - name: AUTHSERVICE_REPLICA_COUNT
-              value: 1
-
+  # The locally staged UDM package contains the bootstrap operator placement
+  # support that is not present in the published upstream package.
   - name: kubevirt
-    repository: ghcr.io/uds-packages/kubevirt
-    ref: v1.8.4-uds.1-upstream
+    path: kubevirt
+    ref: dev-upstream
     overrides:
       kubevirt:
         uds-kubevirt-config:
           variables:
             - name: VM_NAMESPACES
               path: vmNamespaces
-              value:
-                - uds-lab-vms
+              default: [uds-labs-vms]
+            - name: KUBEVIRT_OPERATOR_NODE_PLACEMENT
+              path: operator.nodePlacement
+              default: &appsPlacement
+                nodeSelector:
+                  kubernetes.azure.com/agentpool: apps
+                affinity: {}
+                tolerations: []
+            - name: KUBEVIRT_INFRA_NODE_PLACEMENT
+              path: kubevirt.infra.nodePlacement
+              default: *appsPlacement
+            - name: KUBEVIRT_WORKLOAD_NODE_PLACEMENT
+              path: kubevirt.workloads.nodePlacement
+              default: &labsPlacement
+                nodeSelector:
+                  kubernetes.azure.com/agentpool: isv
+                affinity: {}
+                tolerations:
+                  - key: workload
+                    operator: Equal
+                    value: isv
+                    effect: NoSchedule
 
+
+  # The locally staged UDM package contains bootstrap placement, scoped
+  # networking, and removal-order fixes.
   - name: cdi
     path: cdi
-    ref: dev
+    ref: dev-upstream
     overrides:
       cdi:
         uds-cdi-config:
-          values:
-            - path: workloadNamespaces
-              value:
-                - uds-lab-vms
+          variables:
+            - name: OPERATOR_NODE_PLACEMENT
+              path: operator.nodePlacement
+              default: *appsPlacement
+            - name: INFRA_NODE_PLACEMENT
+              path: cdi.infra
+              default: *appsPlacement
+            - name: WORKLOAD_NODE_PLACEMENT
+              path: cdi.workloads
+              default: *labsPlacement
+            - name: EXPOSE_UPLOAD_PROXY
+              path: uploadProxy.expose
+              default: false
+            - name: ALLOW_IMPORTER_EGRESS
+              path: network.importerEgress.enabled
+              default: false
 
-  - name: uds-lab-platform
+  - name: uds-labs-vm-images
+    path: ../packages/vm-images
+    ref: "0.4.1"
+    overrides:
+      vm-image-server:
+        vm-image-server:
+          values:
+            - path: imageServers.placement
+              value: *labsPlacement
+      golden-pvcs:
+        golden-pvcs:
+          values:
+            - path: goldenPVCs.storageClass
+              value: managed-csi-premium
+
+  - name: uds-labs
     path: ../
-    ref: "0.4.0"
+    ref: "0.4.1"
+    overrides:
+      uds-labs:
+        uds-labs:
+          values:
+            - path: serverPlacement
+              value: &isvPlacement
+                nodeSelector:
+                  kubernetes.azure.com/agentpool: isv
+                affinity: {}
+                tolerations:
+                  - key: workload
+                    operator: Equal
+                    value: isv
+                    effect: NoSchedule
+            - path: operatorPlacement
+              value: *isvPlacement
+            - path: vmiPlacement
+              value: *labsPlacement
+            - path: storageClass
+              value: managed-csi-premium
+            - path: maxActiveSessions
+              value: 1
+            - path: auth.allowedGroups
+              value: [/UDS Labs/Pilot]
+            - path: blockedEgressCIDRs
+              value:
+                - 10.0.0.0/8
+                - 172.16.0.0/12
+                - 192.168.0.0/16
+                - 169.254.0.0/16
+                - 168.63.129.16/32

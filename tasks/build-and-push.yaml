@@ -1,22 +1,22 @@
 tasks:
   - name: build-all
-    description: Build lab-platform and VM image server containers (no qcow2 needed for VM images — uses existing base layer)
+    description: Build uds-labs and VM image server containers (no qcow2 needed for VM images — uses existing base layer)
     actions:
-      - description: Build lab-platform image
+      - description: Build uds-labs image
         cmd: |
           VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          echo "Building ghcr.io/enxoco/uds-lab-platform:${VERSION}..."
-          docker build -t "ghcr.io/enxoco/uds-lab-platform:${VERSION}" .
+          echo "Building ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}..."
+          docker build -t "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}" .
         maxTotalSeconds: 600
 
   - name: push-all
-    description: Push lab-platform and VM image server containers to ghcr.io
+    description: Push uds-labs and VM image server containers to ghcr.io
     actions:
-      - description: Push lab-platform image
+      - description: Push uds-labs image
         cmd: |
           VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          echo "Pushing ghcr.io/enxoco/uds-lab-platform:${VERSION}..."
-          docker push "ghcr.io/enxoco/uds-lab-platform:${VERSION}"
+          echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}..."
+          docker push "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
         maxTotalSeconds: 600
 
   - name: build-and-push

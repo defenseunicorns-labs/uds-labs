@@ -12,7 +12,7 @@ import (
 )
 
 // GroupVersion is the group/version for the LabSession API.
-var GroupVersion = schema.GroupVersion{Group: "lab.uds.dev", Version: "v1alpha1"}
+var GroupVersion = schema.GroupVersion{Group: "labs.uds.dev", Version: "v1alpha1"}
 
 // SchemeBuilder registers the LabSession types with a runtime scheme.
 var SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

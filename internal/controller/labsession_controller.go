@@ -15,11 +15,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	labv1 "github.com/enxoco/uds-lab-platform/api/v1alpha1"
-	"github.com/enxoco/uds-lab-platform/internal/provider"
+	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/provider"
 )
 
-const finalizer = "lab.uds.dev/teardown"
+const finalizer = "labs.uds.dev/teardown"
 
 // requeueWhilePending is how often we re-check a not-yet-ready session (covers
 // VMI phase transitions and the ttyd readiness probe).
@@ -35,15 +35,14 @@ type LabSessionReconciler struct {
 	Probe func(ctx context.Context, serviceDNS string) bool
 }
 
-// +kubebuilder:rbac:groups=lab.uds.dev,resources=labsessions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=lab.uds.dev,resources=labsessions/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=lab.uds.dev,resources=labsessions/finalizers,verbs=update
+// +kubebuilder:rbac:groups=labs.uds.dev,resources=labsessions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=labs.uds.dev,resources=labsessions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=labs.uds.dev,resources=labsessions/finalizers,verbs=update
 // +kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cdi.kubevirt.io,resources=datavolumes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile drives one LabSession toward Ready, enforces its TTL, and tears it
 // down on deletion.
@@ -82,7 +81,7 @@ func (r *LabSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	// TTL: once expired, tear down everything (including any snapshot) but retain
+	// TTL: once expired, tear down compute and disk but retain
 	// the CR so the CSM dashboard can display completed steps for up to 30 days.
 	// TODO: delete expired CRs after this display window to enforce physical
 	// retention, rather than only filtering them from the dashboard.
@@ -94,51 +93,34 @@ func (r *LabSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 			if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
 				status.Phase = labv1.PhaseExpired
-				status.SnapshotName = ""
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Pause: stop compute, snapshot disk, then drop disk. Two-phase to allow
-	// snapshot creation while the PVC still exists.
-	if ls.Spec.Paused && ls.Status.Phase != labv1.PhasePaused {
-		if ls.Status.SnapshotName == "" {
-			// Phase 1: tear down the VM, create a snapshot of the still-live PVC.
-			if err := r.Provider.TeardownCompute(ctx, ls); err != nil {
-				return ctrl.Result{}, err
-			}
-			snapName, err := r.Provider.Snapshot(ctx, ls)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
-				status.SnapshotName = snapName
 				status.ServiceDNS = ""
 			}); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-		// Phase 2: wait for snapshot, then drop the disk.
-		ready, err := r.Provider.SnapshotReady(ctx, ls.Status.SnapshotName)
-		if err != nil || !ready {
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-		if err := r.Provider.TeardownDisk(ctx, ls); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
-			status.Phase = labv1.PhasePaused
-		}); err != nil {
-			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
 	}
 
-	// Resume: clear paused flag and let Reconcile recreate the VM from snapshot.
+	// Pause stops compute but retains the DataVolume/PVC. The provider confirms
+	// VMI deletion before the lifecycle is reported as Paused.
+	if ls.Spec.Paused && ls.Status.Phase != labv1.PhasePaused {
+		stopped, err := r.Provider.TeardownCompute(ctx, ls)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !stopped {
+			return ctrl.Result{RequeueAfter: requeueWhilePending}, nil
+		}
+		if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
+			status.Phase = labv1.PhasePaused
+			status.ServiceDNS = ""
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: requeueUntilExpiry(ls)}, nil
+	}
+
+	// Resume recreates compute around the retained DataVolume.
 	if !ls.Spec.Paused && ls.Status.Phase == labv1.PhasePaused {
 		if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
 			status.Phase = labv1.PhaseProvisioning
@@ -165,14 +147,6 @@ func (r *LabSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		phase = labv1.PhaseReady
 	}
 
-	// Once the VM is running again after a resume, the snapshot is no longer
-	// needed. Keep SnapshotName until deletion succeeds so a transient storage
-	// error can be retried without blocking the session's phase transition.
-	snapToDelete := ls.Status.SnapshotName
-	if phase != labv1.PhaseRunning && phase != labv1.PhaseReady {
-		snapToDelete = ""
-	}
-
 	if ls.Status.Phase != phase || ls.Status.ServiceDNS != res.ServiceDNS || ls.Status.Message != res.Message {
 		if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
 			status.Phase = phase
@@ -181,23 +155,6 @@ func (r *LabSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-
-	snapshotCleanupPending := false
-	if snapToDelete != "" {
-		if err := r.Provider.DeleteSnapshot(ctx, snapToDelete); err != nil {
-			log.FromContext(ctx).Error(err, "delete post-resume snapshot", "snapshot", snapToDelete)
-			snapshotCleanupPending = true
-		} else {
-			if err := r.patchStatus(ctx, ls, func(status *labv1.LabSessionStatus) {
-				status.SnapshotName = ""
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	}
-	if snapshotCleanupPending {
-		return ctrl.Result{RequeueAfter: requeueWhilePending}, nil
 	}
 
 	// Requeue until Ready (and to re-check TTL).
