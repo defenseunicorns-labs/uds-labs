@@ -69,53 +69,21 @@ uds deploy oci://ghcr.io/defenseunicorns/packages/uds/core-slim-dev:<VERSION> --
 > TODO(confirm): pin the core-slim-dev package ref/version DU wants for this spike.
 > Verify it deploys cleanly onto bare k3s (Istio, Pepr, Keycloak, etc. come up).
 
-## 5. Build the KubeVirt package locally — capture this for bundle wiring
+## 5. Use the published KubeVirt package
 
-The DU KubeVirt UDS package is entitlement-gated and not pullable here, but its
-**source is available**, so build the package on (or for) the VM and reference it
-by local `path:` in the bundle rather than a remote `repository:`.
+The bundle consumes the published upstream UDS KubeVirt package directly:
 
-```sh
-# clone the KubeVirt package source (fill in the repo you have)
-git clone <KUBEVIRT_PACKAGE_SOURCE_REPO> kubevirt-package
-cd kubevirt-package
-
-# build the zarf/uds package locally (commands depend on the source layout —
-# typically one of these, check its tasks.yaml / README):
-uds run build            # if it defines a build task
-# or
-zarf package create . --confirm --output ./build
-# or
-uds create . --confirm
-
-# inspect what you just built so the bundle can reference it accurately
-zarf package inspect ./build/zarf-package-*.tar.zst        # name, version, components, images
+```yaml
+repository: ghcr.io/uds-packages/kubevirt
+ref: v1.8.4-uds.2-upstream
 ```
 
-### Capture these answers (paste back so the bundle gets wired correctly):
-1. **Package name + version** and the **built artifact path** (tarball) — the bundle
-   references it via `path:`/`ref:`, not a remote registry.
-2. **CDI**: built into the same package, a **separate** package to build too (give its
-   path), or absent (→ we vendor upstream CDI as our own Zarf component).
-3. **Component / chart names** inside each package (needed for `overrides` paths).
-4. **`useEmulation`**: confirm it is **not** force-enabled. On native-KVM k3s we want
-   real virtualization (`spec.configuration.developerConfiguration.useEmulation: false`).
-   If the package hardcodes `true`, note it so we override it off.
-5. **UDS Exemption**: does the package ship a Pepr policy `Exemption` CR for the KubeVirt
-   (and CDI) namespaces? If not, we author one — `virt-handler` is a privileged hostPath
-   DaemonSet and UDS Core's policies will block it otherwise.
-6. **Namespaces** the package installs into (for NetworkPolicy/Exemption scoping).
-7. **Storage / DataVolume assumptions**, if any (default SC, access modes). On k3s this
-   should be `local-path` / RWO / Filesystem.
+No local KubeVirt checkout or package build is required. Confirm access to the
+repository before creating the bundle. CDI remains a separate package.
 
-> Once these are captured, the bundle (Section 6) is wired with real local refs and the
-> two-command deploy flow works.
+## 6. Bundle workflow
 
----
-
-## 6. Bundle workflow this enables (wired after inspect)
-
-Once the refs are confirmed, `bundle/uds-bundle.yaml` becomes an ordered
+`bundle/uds-bundle.yaml` defines an ordered
 multi-package bundle:
 
 ```

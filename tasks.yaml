@@ -105,13 +105,10 @@ tasks:
   # compose these. Pass skip=1 to any step to no-op it from a composite task.
 
   - name: preflight
-    description: Verify required tools, KVM access, package inputs, and image config
+    description: Verify required tools, KVM access, CDI package input, and image config
     inputs:
-      kubevirt_pkg_dir:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       cdi_package:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - description: Check tools, KVM, package artifacts, and image config
@@ -121,7 +118,6 @@ tasks:
             command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: missing required tool: $tool"; FAILED=1; }
           done
           ls /dev/kvm >/dev/null 2>&1 || { echo "ERROR: /dev/kvm not found — enable KVM in BIOS (AMD-V / Intel VT-x)"; FAILED=1; }
-          [ -d "${{ .inputs.kubevirt_pkg_dir }}" ] || { echo "ERROR: KubeVirt package dir not found: ${{ .inputs.kubevirt_pkg_dir }}"; FAILED=1; }
           [ -f "${{ .inputs.cdi_package }}" ] || { echo "ERROR: CDI package artifact not found: ${{ .inputs.cdi_package }}"; FAILED=1; }
           [ "$FAILED" = "0" ] || exit 1
       - task: validate-package-config
@@ -350,38 +346,6 @@ tasks:
             ZARF_INIT_ATTEMPT=$((ZARF_INIT_ATTEMPT + 1))
           done
         maxTotalSeconds: 600
-
-  - name: build-kubevirt
-    description: Build and stage the placement-enabled UDM KubeVirt package
-    inputs:
-      dir:
-        description: Path to the UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
-      skip_if_exists:
-        description: Skip rebuild if the dev package already exists (set to 1)
-        default: "0"
-      rebuild:
-        description: Rebuild package (1 = rebuild)
-        default: "1"
-    actions:
-      - description: Build KubeVirt package and copy it into the bundle input directory
-        cmd: |
-          # shellcheck shell=bash
-          set -euo pipefail
-          ROOT=$(pwd)
-          cd "${{ .inputs.dir }}"
-          PACKAGE=./zarf-package-kubevirt-amd64-dev-upstream.tar.zst
-          if [ "${{ .inputs.skip_if_exists }}" != "1" ] && [ "${{ .inputs.rebuild }}" = "1" ]; then
-            zarf package create . -f upstream --confirm
-          elif [ -f "$PACKAGE" ]; then
-            echo "Existing package found ($PACKAGE) — skipping rebuild"
-          fi
-          [ -f "$PACKAGE" ] || { echo "ERROR: KubeVirt dev package not found after build: $PWD/$PACKAGE" >&2; exit 1; }
-          mkdir -p "$ROOT/bundle/kubevirt"
-          find "$ROOT/bundle/kubevirt" -maxdepth 1 -type f -name 'zarf-package-kubevirt-*.tar.zst' -delete
-          cp "$PACKAGE" "$ROOT/bundle/kubevirt/zarf-package-kubevirt-amd64-dev-upstream.tar.zst"
-          echo "Staged $PWD/$PACKAGE for the UDS Labs bundle"
-        maxTotalSeconds: 3600
 
   - name: stage-cdi-package
     description: Stage the placement-enabled UDM CDI package for bundle creation
@@ -701,16 +665,12 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe/bootstrap, 0 = skip bootstrap)
         default: "1"
-      KUBEVIRT_PKG_DIR:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - task: preflight
         with:
-          kubevirt_pkg_dir: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           cdi_package: ${{ .inputs.CDI_PACKAGE }}
       - task: wipe-k3s
         with:
@@ -759,11 +719,8 @@ tasks:
   - name: deploy-stack
     description: Build and deploy the UDS bundle, then run read-only cluster verification.
     inputs:
-      KUBEVIRT_PKG_DIR:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
@@ -780,9 +737,6 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
-      REBUILD_KUBEVIRT:
-        description: Rebuild KubeVirt package (1 = rebuild)
-        default: "1"
       BUNDLE_PROFILE:
         description: Bundle profile to build and deploy (default or local)
         default: default
@@ -792,10 +746,6 @@ tasks:
           build: ${{ .inputs.BUILD_IMAGES }}
           skip_base: ${{ .inputs.SKIP_BASE }}
           skip_uds_core: ${{ .inputs.SKIP_UDS_CORE }}
-      - task: build-kubevirt
-        with:
-          dir: ${{ .inputs.KUBEVIRT_PKG_DIR }}
-          rebuild: ${{ .inputs.REBUILD_KUBEVIRT }}
       - task: stage-cdi-package
         with:
           package: ${{ .inputs.CDI_PACKAGE }}
@@ -823,11 +773,8 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe/bootstrap)
         default: "1"
-      KUBEVIRT_PKG_DIR:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
@@ -848,18 +795,15 @@ tasks:
       - task: bootstrap-local-cluster
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
       - task: deploy-stack
         with:
-          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
           SKIP_BASE: ${{ .inputs.SKIP_BASE }}
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          REBUILD_KUBEVIRT: ${{ .inputs.WIPE_CLUSTER }}
 
   # ── CoreDNS patch ─────────────────────────────────────────────────────────────
 
@@ -938,7 +882,6 @@ tasks:
           BUILD_IMAGES: "0"
           LOCAL_VM_IMAGES: "0"
           VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
-          REBUILD_KUBEVIRT: "0"
           BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
       - task: smoke-test
 
@@ -1045,11 +988,8 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe)
         default: "1"
-      KUBEVIRT_PKG_DIR:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
@@ -1079,7 +1019,6 @@ tasks:
       - task: bootstrap-local-cluster
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
       - task: deploy-local-uds-core
         with:
@@ -1088,14 +1027,12 @@ tasks:
           identity_package: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
       - task: deploy-stack
         with:
-          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
           SKIP_BASE: ${{ .inputs.SKIP_BASE }}
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          REBUILD_KUBEVIRT: ${{ .inputs.WIPE_CLUSTER }}
           BUNDLE_PROFILE: local
       - task: patch-coredns
       - task: start-proxy
@@ -1115,11 +1052,8 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe)
         default: "1"
-      KUBEVIRT_PKG_DIR:
-        description: Path to the placement-enabled UDM KubeVirt package directory
-        default: $HOME/src/github.com/defenseunicorns-udm/kubevirt
       CDI_PACKAGE:
-        description: Path to the placement-enabled UDM CDI package artifact
+        description: Path to the CDI package artifact
         default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
@@ -1146,7 +1080,6 @@ tasks:
       - task: local-e2e
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          KUBEVIRT_PKG_DIR: ${{ .inputs.KUBEVIRT_PKG_DIR }}
           CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
           UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}

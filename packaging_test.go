@@ -288,12 +288,12 @@ func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 		}
 	}
 
-	for _, localPackage := range []string{
-		"name: kubevirt\n    path: kubevirt\n    ref: dev-upstream",
+	for _, requiredPackage := range []string{
+		"name: kubevirt\n    repository: ghcr.io/uds-packages/kubevirt\n    ref: v1.8.4-uds.2-upstream",
 		"name: cdi\n    path: cdi\n    ref: dev-upstream",
 	} {
-		if !strings.Contains(bundle, localPackage) {
-			t.Fatalf("development bundle must consume staged local package %q", localPackage)
+		if !strings.Contains(bundle, requiredPackage) {
+			t.Fatalf("development bundle is missing package reference %q", requiredPackage)
 		}
 	}
 	for _, variable := range []string{
