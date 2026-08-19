@@ -7,11 +7,10 @@ metadata:
   version: "0.4.1"
 
 packages:
-  # The locally staged UDM package contains the bootstrap operator placement
-  # support that is not present in the published upstream package.
+  # Published upstream UDS package with bootstrap operator placement support.
   - name: kubevirt
-    path: kubevirt
-    ref: dev-upstream
+    repository: ghcr.io/uds-packages/kubevirt
+    ref: v1.8.4-uds.2-upstream
     overrides:
       kubevirt:
         uds-kubevirt-config:
@@ -42,8 +41,7 @@ packages:
                     effect: NoSchedule
 
 
-  # The locally staged UDM package contains bootstrap placement, scoped
-  # networking, and removal-order fixes.
+  # CDI package with bootstrap placement, scoped networking, and removal-order fixes.
   - name: cdi
     path: cdi
     ref: dev-upstream

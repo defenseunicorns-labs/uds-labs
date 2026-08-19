@@ -21,14 +21,13 @@ The full end-to-end environment requires:
 - `virtctl` for VM console and SSH access
 - Packer 1.9 or newer, `qemu-img`, and `qemu-system-x86_64` when building VM
   images
-- Placement-enabled KubeVirt checkout: `~/src/github.com/defenseunicorns-udm/kubevirt`
+- Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
 - Placement-enabled CDI checkout: `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
 
-Override either checkout when it lives elsewhere:
+Override the CDI artifact when it lives elsewhere:
 
 ```bash
 uds run preflight \
-  --with kubevirt_pkg_dir=/path/to/kubevirt \
   --with cdi_package=/path/to/zarf-package-cdi-amd64-dev-unicorn.tar.zst
 ```
 
@@ -87,7 +86,7 @@ order:
 3. Deploy the pinned standalone UDS Core 1.10.0 `core-base` and
    `core-identity-authorization` Zarf packages directly. No k3d bundle or k3d
    package is used; the identity package installs both Keycloak and authservice.
-4. Build/stage KubeVirt, CDI, the VM-image package, and UDS Labs.
+4. Pull KubeVirt, stage CDI, and build the VM-image and UDS Labs packages.
 5. Build and deploy the local bundle profile.
 6. Patch cluster DNS, start the local SNI proxy, and create the test user.
 7. Verify golden DataVolumes, the UDS Labs server, and authservice.
@@ -287,7 +286,7 @@ requires them.
 |---|---|---|
 | `clean-artifacts` | Removes built Zarf packages, bundles, image tarballs, and the Zarf temp cache | `clean=1`, `skip=0`; destructive |
 | `lint` | Runs `golangci-lint run ./...` | Requires `golangci-lint` |
-| `preflight` | Checks required tools, KVM, package artifacts, and package configuration | `kubevirt_pkg_dir`, `cdi_package` |
+| `preflight` | Checks required tools, KVM, CDI package artifact, and package configuration | `cdi_package` |
 | `validate-package-config` | Checks VM image-server and CDI import contracts | No cluster required |
 | `dry-run` | Runs tests and renders Helm and Zarf packages | No cluster required |
 
@@ -300,7 +299,6 @@ requires them.
 | `push-vm-images` | Pushes base and UDS Core image-server images to GHCR | `tag`; requires registry write access |
 | `build-image` | Builds the versioned uds-labs container image | Version comes from `zarf.yaml` |
 | `push-image` | Pushes the uds-labs image to GHCR | Requires registry write access |
-| `build-kubevirt` | Builds the external KubeVirt Zarf package | `dir`, `rebuild=1`, `skip_if_exists=0` |
 | `stage-cdi-package` | Stages a prebuilt external CDI package for bundle creation | `package` |
 | `build-lab-package` | Builds the UDS Labs server/operator Zarf package | none |
 | `build-vm-images-package` | Reuses/pulls a versioned VM-image package or builds one locally | `local`, `repository` |
@@ -342,7 +340,6 @@ requires them.
 | Input | Default | Effect |
 |---|---:|---|
 | `WIPE_CLUSTER` | `1` | Recreate k3s and UDS Core; use `0` to preserve them |
-| `KUBEVIRT_PKG_DIR` | `~/src/github.com/defenseunicorns-udm/kubevirt` | Select the placement-enabled KubeVirt checkout |
 | `CDI_PACKAGE` | external upstream artifact | Select the prebuilt CDI package |
 | `UDS_CORE_BASE_PACKAGE` | UDS Core `core-base:1.10.0-upstream` | Standalone base package for bare k3s |
 | `UDS_CORE_IDENTITY_PACKAGE` | UDS Core `core-identity-authorization:1.10.0-upstream` | Standalone Keycloak and authservice package for bare k3s |
