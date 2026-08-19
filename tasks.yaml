@@ -109,7 +109,7 @@ tasks:
     inputs:
       cdi_package:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - description: Check tools, KVM, package artifacts, and image config
         cmd: |
@@ -348,11 +348,11 @@ tasks:
         maxTotalSeconds: 600
 
   - name: stage-cdi-package
-    description: Stage the placement-enabled UDM CDI package for bundle creation
+    description: Stage the placement-enabled CDI package for bundle creation
     inputs:
       package:
-        description: Path to the UDM CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        description: Path to the CDI package artifact
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - description: Copy CDI package into bundle input directory
         cmd: |
@@ -565,13 +565,29 @@ tasks:
   - name: patch-demo-routes
     description: |
       Exempt /demo and /api/demo-sessions from Istio authservice and JWT auth.
-      Pepr overwrites these policies on every Package CR reconciliation — re-run
-      after any Helm upgrade: uds run patch-demo-routes
+      deploy-stack runs this after each bundle deployment. Re-run it after any
+      direct Package CR change because Pepr overwrites the generated policies.
     inputs:
       namespace:
         description: Namespace containing the uds-labs Package CR
         default: uds-labs
     actions:
+      - description: Wait for latest UDS Package reconciliation
+        cmd: |
+          NS="${{ .inputs.namespace }}"
+          deadline=$(( $(date +%s) + 120 ))
+          while true; do
+            generation=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)
+            observed=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)
+            ready=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [ -n "$generation" ] && [ "$generation" = "$observed" ] && [ "$ready" = "True" ]; then
+              break
+            fi
+            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for uds-labs Package reconciliation"; exit 1; }
+            sleep 3
+          done
+          echo "uds-labs Package generation $generation reconciled"
+        maxTotalSeconds: 130
       - description: Wait for authservice AuthorizationPolicy
         cmd: |
           NS="${{ .inputs.namespace }}"
@@ -667,7 +683,7 @@ tasks:
         default: "1"
       CDI_PACKAGE:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
     actions:
       - task: preflight
         with:
@@ -721,7 +737,7 @@ tasks:
     inputs:
       CDI_PACKAGE:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
         default: "0"
@@ -764,6 +780,7 @@ tasks:
       - task: deploy-bundle
         with:
           profile: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: patch-demo-routes
       - task: wait-kubevirt
       - task: verify-cluster
 
@@ -775,7 +792,7 @@ tasks:
         default: "1"
       CDI_PACKAGE:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
         default: "0"
@@ -890,7 +907,7 @@ tasks:
   # Exits non-zero on any failure so CI and uds run dev surface problems early.
 
   - name: smoke-test
-    description: Verify the deployed stack is healthy (golden PVCs, platform pod, authservice)
+    description: Verify golden PVCs, platform, authservice, and demo-route authorization
     actions:
       - description: Check golden PVCs are Succeeded
         maxTotalSeconds: 1800
@@ -978,6 +995,21 @@ tasks:
             echo "  ⚠ authservice restarts: $RESTARTS — may indicate DNS/Keycloak issue"
             echo "    Check: kubectl logs -n authservice deploy/authservice"
           fi
+      - description: Check demo routes bypass authservice and JWT policies
+        maxTotalSeconds: 30
+        cmd: |
+          for policy in uds-labs-authservice uds-labs-jwt-authz; do
+            paths=$(kubectl get authorizationpolicy "$policy" -n uds-labs \
+              -o jsonpath='{.spec.rules[0].to[0].operation.notPaths[*]}' 2>/dev/null || true)
+            for path in "/demo" "/demo/*" "/api/demo-sessions"; do
+              if ! printf '%s\n' "$paths" | tr ' ' '\n' | grep -Fxq "$path"; then
+                echo "ERROR: AuthorizationPolicy/$policy does not exempt $path" >&2
+                echo "Run: uds run patch-demo-routes" >&2
+                exit 1
+              fi
+            done
+          done
+          echo "  ✔ demo routes bypass authservice and JWT policies"
 
   # ── Full local E2E workflow ───────────────────────────────────────────────────
   # Bare k3s → UDS Core → KubeVirt/CDI → VM images → UDS Labs → local access.
@@ -990,7 +1022,7 @@ tasks:
         default: "1"
       CDI_PACKAGE:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
         default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
@@ -1054,7 +1086,7 @@ tasks:
         default: "1"
       CDI_PACKAGE:
         description: Path to the CDI package artifact
-        default: $HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
         default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream

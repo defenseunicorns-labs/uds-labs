@@ -12,11 +12,11 @@ spec:
     # UDS Core TypeScript CRD).
     #
     # The self-service demo mode requires /demo and /api/demo-sessions to be
-    # reachable without SSO.  After every deploy (or Package CR reconciliation),
-    # run scripts/patch-demo-routes.sh to add notPaths to the Istio
-    # AuthorizationPolicies that Pepr generates for this client:
+    # reachable without SSO. The deploy-stack task patches the generated
+    # policies after bundle deployment. After direct Package CR changes, run
+    # scripts/patch-demo-routes.sh to restore the notPaths exclusions:
     #
-    #   kubectl apply: scripts/patch-demo-routes.sh --wait
+    #   ./scripts/patch-demo-routes.sh --wait
     #
     # This is a cluster-level operation that must be performed by a cluster
     # admin until UDS Core adds per-path authservice bypass to the Package spec.
