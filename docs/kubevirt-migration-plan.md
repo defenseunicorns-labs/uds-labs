@@ -17,9 +17,9 @@
 > - Validate on a **standalone nested-virt Azure VM running k3s directly** (not k3d):
 >   k3d's container-nodes don't expose `/dev/kvm`, forcing slow software emulation that
 >   can't run our nested-k3d-in-VM-runs-UDS-Core scenario. k3s on the VM gives native KVM.
-> - The DU KubeVirt UDS package is entitlement-gated and the user lacks pull access, **but
->   has the source** → KubeVirt package is **built locally** and referenced by `path:` in
->   the bundle. CDI source/inclusion TBD from the local build.
+> - KubeVirt is consumed from the published upstream UDS package at
+>   `ghcr.io/uds-packages/kubevirt:v1.8.4-uds.2-upstream`. No local package build is
+>   required. CDI remains a separate package.
 > - On native-KVM k3s, `useEmulation` stays **off**.
 > - Bundle wiring (`bundle/uds-bundle.yaml`) is **pending** the locally-built package's
 >   name/version/components/namespaces/Exemption details.
@@ -168,7 +168,7 @@ smoke test.
 5. RBAC: server CRUD on `LabSession` only; operator on VMI/Service/NetworkPolicy/DataVolume.
 
 ### Phase F — Packaging & docs
-1. `bundle/uds-bundle.yaml`: ordered multi-package — **locally-built KubeVirt** (+ CDI) →
+1. `bundle/uds-bundle.yaml`: ordered multi-package — **published upstream KubeVirt** (+ CDI) →
    `uds-lab-platform`. Operator+server Deployments, CRD, RBAC, size ConfigMap, optional
    image components. Pepr `Exemption` for KubeVirt/CDI namespaces if the package lacks one.
 2. Rewrite Hetzner sections of `README.md`; correct the `*.uds.dev` topology description.
@@ -193,8 +193,8 @@ smoke test.
 - **Plan review**: corrected the ADR-0010 nested-k3d error; added the Phase 0 gate;
   reordered D0 before C; promoted D1–D3; split `internal/sizing`; re-scoped Packer rewrite
   and the five-handler server refactor; made NetworkPolicy server→Service ingress explicit.
-- **Bundle review**: DU KubeVirt package is entitlement-gated at
-  `registry.defenseunicorns.com/airgap-store/kubevirt`; CDI likely separate; k3d doesn't
+- **Bundle review**: KubeVirt is consumed from the published upstream UDS package; CDI
+  remains separate; k3d doesn't
   expose `/dev/kvm` (→ k3s-on-VM decision); CDI on `local-path` is RWO/Filesystem; KubeVirt
   needs a UDS Pepr `Exemption` (privileged hostPath virt-handler); enforce bundle deploy
   ordering and decouple VMI readiness from bundle health checks.

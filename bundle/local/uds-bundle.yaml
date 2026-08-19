@@ -8,8 +8,8 @@ metadata:
 
 packages:
   - name: kubevirt
-    path: ../kubevirt
-    ref: dev-upstream
+    repository: ghcr.io/uds-packages/kubevirt
+    ref: v1.8.4-uds.2-upstream
     overrides:
       kubevirt:
         uds-kubevirt-config:

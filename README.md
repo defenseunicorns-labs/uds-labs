@@ -46,7 +46,7 @@ retaining that Session PVC; resume reattaches the same disk.
 - 80+ GB free disk for packer output
 - `uds`, `zarf`, `kubectl`, `docker`, `jq`, `ip`, `curl`
 - [virtctl](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) (for VM console/SSH access)
-- Placement-enabled KubeVirt package repo at `~/src/github.com/defenseunicorns-udm/kubevirt`
+- Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
 - Placement-enabled CDI package repo at `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
 
 **First-time only:**
@@ -72,7 +72,7 @@ uds run local-e2e \
 2. Installs MetalLB and initializes Zarf.
 3. Deploys the standalone UDS Core 1.10.0 base and identity Zarf packages
    directly onto bare k3s; no k3d bundle is used.
-4. Builds/stages KubeVirt and CDI.
+4. Pulls the published KubeVirt package and stages CDI.
 5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
 6. Builds and deploys the local UDS Labs bundle.
 7. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
@@ -333,8 +333,8 @@ create the package with `uds run build-vm-images-package`, then publish it.
 gh workflow run bump-version.yaml -f bump_type=minor
 ```
 
-The default deployment bundle stages the locally built placement-enabled
-packages from `~/src/github.com/defenseunicorns-udm/kubevirt` and
+The default deployment bundle consumes the published KubeVirt UDS package and
+stages the CDI package from
 `~/src/github.com/defenseunicorns-udm/containerized-data-importer`. It uses an
 ignored environment configuration copied from `bundle/uds-config.example.yaml`.
 The committed `bundle/local/` profile is separate and needs no deployment config.
