@@ -22,7 +22,7 @@ The full end-to-end environment requires:
 - Packer 1.9 or newer, `qemu-img`, and `qemu-system-x86_64` when building VM
   images
 - Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
-- Placement-enabled CDI checkout: `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
+- Placement-enabled CDI checkout: `~/src/github.com/uds-packages/containerized-data-importer`
 
 Override the CDI artifact when it lives elsewhere:
 
@@ -58,7 +58,7 @@ Pass task inputs with `--with`:
 
 ```bash
 uds run dev --with WIPE_CLUSTER=0 \
-  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
+  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
 ```
 
 Input names are case-sensitive.
@@ -75,7 +75,7 @@ Refresh sudo credentials immediately before a full run:
 ```bash
 sudo -v
 uds run local-e2e \
-  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
+  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
 ```
 
 `uds run dev` is an alias for `local-e2e`. The task performs these steps in
@@ -323,13 +323,13 @@ requires them.
 | Task | What it does | Important inputs or notes |
 |---|---|---|
 | `deploy-bundle` | Deploys the newest selected-profile bundle | `profile=default\|local`; run `build-bundle` first |
-| `patch-demo-routes` | Restores unauthenticated demo-route exemptions | `namespace=uds-labs`; rerun after Helm reconciliation |
+| `patch-demo-routes` | Restores unauthenticated demo-route exemptions | Called by `deploy-stack`; rerun after direct Package CR changes |
 | `patch-coredns` | Maps UDS hostnames to MetalLB gateways and restarts authservice | Existing deployed cluster required |
 | `create-test-user` | Creates the documented Keycloak test user | Calls shared `uds-setup:keycloak-user` |
 | `start-proxy` | Starts the local nginx SNI proxy on ports 80 and 443 | Requires gateway LoadBalancer IPs |
 | `stop-proxy` | Stops the local nginx SNI proxy | Uses Docker Compose |
 | `redeploy` | Rebuilds and redeploys without rebuilding infrastructure packages | `BUNDLE_PROFILE=local`, `vm_image_tag` |
-| `smoke-test` | Checks golden PVCs, app pod, and authservice | Returns nonzero on failure |
+| `smoke-test` | Checks golden PVCs, app pod, authservice, and demo-route policy exemptions | Returns nonzero on failure |
 | `local-e2e` | Runs the supported bare-k3s end-to-end workflow | Defaults to `WIPE_CLUSTER=1`; see inputs below |
 | `dev` | Backward-compatible alias for `local-e2e` | Same inputs as `local-e2e` |
 
@@ -407,7 +407,9 @@ uds run start-proxy
 
 ### Demo routes redirect to SSO
 
-Pepr can overwrite route exemptions during Package CR reconciliation:
+`deploy-stack` restores route exemptions automatically after bundle deployment.
+Pepr can still overwrite them after a direct Package CR change; restore and
+verify them with:
 
 ```bash
 uds run patch-demo-routes

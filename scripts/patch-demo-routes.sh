@@ -18,9 +18,9 @@
 #
 # WHEN TO RUN
 # ───────────
-# Run once after initial cluster deploy.  Re-run whenever Pepr reconciles the
-# Package CR (e.g. after a Helm upgrade), because Pepr will overwrite both
-# policies and lose the notPaths additions.
+# The deploy-stack task runs this after each bundle deployment. Run it directly
+# after changing the Package CR outside that workflow, because Pepr will
+# overwrite both policies and lose the notPaths additions.
 #
 # USAGE
 #   ./scripts/patch-demo-routes.sh [--namespace <ns>]
