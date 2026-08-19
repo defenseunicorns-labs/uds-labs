@@ -1,10 +1,10 @@
 # ADR-0005: Per-Scenario Server Type Override
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0013
 
 ## Context
 
-All scenarios previously shared a single Hetzner server type configured globally via `VM_SERVER_TYPE` (default: `ccx13`, 2 vCPU / 8 GB). This worked for lightweight scenarios but proved insufficient for the `uds-reference-package` scenario, which runs UDS Core (Istio, Keycloak, Pepr) plus postgres-operator plus the reference package application on the same cluster. At 92% CPU request allocation before postgres deploys, the `ccx13` cannot schedule postgres pods despite low actual CPU utilization — Kubernetes refuses to schedule based on requests, not usage.
+All scenarios previously shared a single provider-specific server size configured globally (default: a 2 vCPU / 8 GB instance). This worked for lightweight scenarios but proved insufficient for the `uds-reference-package` scenario, which runs UDS Core (Istio, Keycloak, Pepr) plus postgres-operator plus the reference package application on the same cluster. At 92% CPU request allocation before postgres deploys, the `ccx13` cannot schedule postgres pods despite low actual CPU utilization — Kubernetes refuses to schedule based on requests, not usage.
 
 Alternatives considered:
 
@@ -14,7 +14,7 @@ Alternatives considered:
 
 ## Decision
 
-Add an optional `serverType` field to `scenario.yaml`. When set, the session manager uses it instead of the global `VM_SERVER_TYPE`. Scenarios that don't set it continue to use the global default.
+Add an optional provider-specific size field to `scenario.yaml`. When set, the session manager uses it instead of the global default. Scenarios that don't set it continue to use the global default.
 
 The `uds-reference-package` scenario sets `serverType: ccx23` (4 vCPU / 16 GB).
 
@@ -23,4 +23,4 @@ The `uds-reference-package` scenario sets `serverType: ccx23` (4 vCPU / 16 GB).
 - Lightweight scenarios stay on `ccx13`; resource-heavy scenarios opt into larger types explicitly.
 - Scenario authors are responsible for right-sizing — a `serverType` declaration is a cost decision and should be justified.
 - Operators self-hosting the platform should document the server types their scenarios require so infrastructure costs are predictable.
-- The global `VM_SERVER_TYPE` env var remains the fallback and can still be used to override all scenarios at the deployment level (e.g., forcing a larger type for all sessions in a resource-constrained environment).
+- This decision was later replaced by provider-agnostic size tiers defined in ADR-0013.

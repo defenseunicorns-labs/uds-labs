@@ -13,13 +13,13 @@ The platform's image selection logic previously only applied pre-built playgroun
 
 ## Decision
 
-Add an `image` field to `scenario.yaml`. When set, the session manager uses `role=uds-labs-playground,tier=<image>` as the snapshot label selector, regardless of the `playground` flag. The `uds-reference-package` scenario sets `image: uds-core`.
-
-The session manager change is in `internal/session/manager.go`.
+Add an `image` field to `scenario.yaml`. When set, the operator selects the
+corresponding golden PVC tier, regardless of the `playground` flag. The
+`uds-reference-package` scenario sets `image: uds-core`.
 
 ## Consequences
 
 - The reference package scenario starts with UDS Core live — no setup wait, no distraction from the packaging learning objective.
 - The `image` field is available to any future guided scenario that needs a pre-built environment without being an open-ended playground.
-- Scenarios using `image` depend on the named snapshot existing in Hetzner. If the snapshot is missing, session creation fails with a clear error. The snapshot must be built with `packer/build-images.sh` before the scenario is usable.
+- Scenarios using `image` depend on the corresponding golden PVC being populated. If the tier is missing, session provisioning fails with a clear error. The image must be built with `packer/build-images-qemu.sh` and imported before the scenario is usable.
 - The `playground: true` convention for open-ended scenarios is unchanged.

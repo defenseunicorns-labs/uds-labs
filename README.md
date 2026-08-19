@@ -47,7 +47,7 @@ retaining that Session PVC; resume reattaches the same disk.
 - `uds`, `zarf`, `kubectl`, `docker`, `jq`, `ip`, `curl`
 - [virtctl](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) (for VM console/SSH access)
 - Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
-- Placement-enabled CDI package repo at `~/src/github.com/defenseunicorns-udm/containerized-data-importer`
+- Placement-enabled CDI package repo at `~/src/github.com/uds-packages/containerized-data-importer`
 
 **First-time only:**
 - Internet access (pulls Ubuntu cloud image and standalone UDS Core packages)
@@ -63,7 +63,7 @@ and authentication without an environment-specific group requirement.
 ```bash
 sudo -v
 uds run local-e2e \
-  --with CDI_PACKAGE="$HOME/src/github.com/defenseunicorns-udm/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
+  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
 ```
 
 `uds run dev` is a backward-compatible alias for the same flow. It:
@@ -75,8 +75,9 @@ uds run local-e2e \
 4. Pulls the published KubeVirt package and stages CDI.
 5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
 6. Builds and deploys the local UDS Labs bundle.
-7. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
-8. Runs infrastructure smoke tests.
+7. Restores demo-route auth exemptions after Package reconciliation.
+8. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
+9. Runs infrastructure and demo-route policy smoke tests.
 
 After completion:
 
@@ -335,7 +336,7 @@ gh workflow run bump-version.yaml -f bump_type=minor
 
 The default deployment bundle consumes the published KubeVirt UDS package and
 stages the CDI package from
-`~/src/github.com/defenseunicorns-udm/containerized-data-importer`. It uses an
+`~/src/github.com/uds-packages/containerized-data-importer`. It uses an
 ignored environment configuration copied from `bundle/uds-config.example.yaml`.
 The committed `bundle/local/` profile is separate and needs no deployment config.
 Package tarballs and environment configuration remain ignored build artifacts.

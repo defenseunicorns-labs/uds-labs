@@ -40,4 +40,4 @@ Default sizes are defined in the operator if no ConfigMap override is provided, 
 - Scenario definitions are provider-agnostic — the same `scenario.yaml` works on KubeVirt, VMSS, or future providers.
 - Operators can tune resource allocation for their specific cluster capacity without modifying scenario files.
 - Adding a new size tier (e.g., `xlarge`) requires updating both the ConfigMap and any scenarios that need it.
-- The previous `VM_SERVER_TYPE` environment variable and `serverType` scenario field are removed.
+- The previous provider-specific global size override and `serverType` scenario field are removed.

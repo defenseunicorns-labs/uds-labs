@@ -109,7 +109,7 @@ Do not trust Phases C+ on a cluster until these pass. See
 | VM create | `hetzner.CreateServer` → `(VMID, VMIP)` | Server creates `LabSession` CR; operator reconciles → VMI + Service + NetworkPolicy |
 | VM identity | `Session.VMID int64`, `Session.VMIP string` | `LabSession` CR; proxy target = `status.serviceDNS` |
 | Image selection | `FindLatestSnapshot` by label keyed on `image`/`playground` | `(image tier, size)` → OCI ref in operator config; CDI DataVolume |
-| Sizing | `serverType: ccx23` / `VM_SERVER_TYPE` | `size: small\|medium\|large` → operator ConfigMap → `resources.requests` |
+| Sizing | provider-specific server size | `size: small\|medium\|large` → operator ConfigMap → `resources.requests` |
 | Lifecycle/TTL | in-memory map + `cleanupLoop` | operator reconcile loop; CR `spec.expiresAt` |
 | Networking | `http://<publicIP>:<port>` | `http://lab-<id>.uds-lab-vms.svc.cluster.local:<port>` |
 | Boot config | server-rendered cloud-init | operator-rendered `cloudInitNoCloud` (same scripts; SSH-key bits dropped) |
@@ -127,7 +127,7 @@ the web UI, all scenario content, the nested-k3d topology.
    default `medium`). Keep `Image`. Inline re-parse in `manager.go` updated.
 2. `scenarios/uds-reference-package/scenario.yaml`: `size: large`.
 3. `internal/sizing`: tiers + defaults + `Normalize`/`Valid` (no k8s dep) + `Resolve(overrides)`.
-4. Removed `VM_SERVER_TYPE` / `VMConfig.ServerType`; interim size→Hetzner map until Phase E.
+4. Removed the provider-specific global size override; interim size mapping remains until Phase E.
 
 ### Phase B — LabSession CRD + scaffolding ✅
 1. `controller-runtime` v0.20 + `kubevirt.io/api` + CDI api.
@@ -150,7 +150,7 @@ the web UI, all scenario content, the nested-k3d topology.
 > NetworkPolicy egress the in-VM workload actually needs.
 
 ### Phase D0 — Base image as qcow2/OCI + CDI (prerequisite to live Phase C test)
-Rewrite `packer/*.pkr.hcl` + `build-images.sh` onto the **QEMU builder** (qcow2), chained
+Rewrite the legacy Packer templates onto the **QEMU builder** (qcow2), chained
 via file inputs; ORAS-wrap to a cluster-local registry; CDI + storage class confirmed.
 
 ### Phase D1 — Heavy images + CI
@@ -163,8 +163,8 @@ smoke test.
 2. Switch the five `main.go` handlers from `sess.VMIP` to `sess.ServiceDNS`, gate on
    `status.serviceDNS != ""`.
 3. Rework `ownsSession`/`clientID` to use CR `spec.clientID`.
-4. Delete `internal/hetzner`; remove `HCLOUD_TOKEN`/SSH/location/token prompt; remove
-   `chart/templates/hcloud-secret.yaml` and the Hetzner egress in `uds-package.yaml`.
+4. Delete the legacy cloud provider; remove cloud credentials/SSH/location/token prompts; remove
+   provider-specific secrets and egress rules.
 5. RBAC: server CRUD on `LabSession` only; operator on VMI/Service/NetworkPolicy/DataVolume.
 
 ### Phase F — Packaging & docs

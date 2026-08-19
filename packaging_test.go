@@ -66,6 +66,20 @@ type chartMetadata struct {
 	AppVersion string `yaml:"appVersion"`
 }
 
+type taskConfig struct {
+	Tasks []taskDefinition `yaml:"tasks"`
+}
+
+type taskDefinition struct {
+	Name    string       `yaml:"name"`
+	Actions []taskAction `yaml:"actions"`
+}
+
+type taskAction struct {
+	Task string `yaml:"task"`
+	Cmd  string `yaml:"cmd"`
+}
+
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	contents, err := os.ReadFile(path)
@@ -392,6 +406,69 @@ func TestLocalE2EProfileUsesK3sDefaults(t *testing.T) {
 	for _, required := range []string{"authservice:", "replicaCount: 1", "insecureAdminPasswordGeneration:"} {
 		if !strings.Contains(identityValues, required) {
 			t.Errorf("local UDS Core identity values are missing %q", required)
+		}
+	}
+}
+
+func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *testing.T) {
+	var config taskConfig
+	readYAML(t, "tasks.yaml", &config)
+
+	definitions := map[string]*taskDefinition{}
+	for i := range config.Tasks {
+		definitions[config.Tasks[i].Name] = &config.Tasks[i]
+	}
+	for _, required := range []string{"local-e2e", "deploy-stack", "patch-demo-routes", "smoke-test"} {
+		if definitions[required] == nil {
+			t.Fatalf("tasks.yaml must define %q", required)
+		}
+	}
+
+	actionPositions := func(task *taskDefinition) map[string]int {
+		positions := map[string]int{}
+		for i, action := range task.Actions {
+			if action.Task != "" {
+				positions[action.Task] = i
+			}
+		}
+		return positions
+	}
+	localPositions := actionPositions(definitions["local-e2e"])
+	for _, required := range []string{"deploy-stack", "patch-coredns"} {
+		if _, exists := localPositions[required]; !exists {
+			t.Fatalf("local-e2e is missing task %q", required)
+		}
+	}
+	if localPositions["deploy-stack"] >= localPositions["patch-coredns"] {
+		t.Fatalf("local-e2e must deploy the stack before configuring local access; positions: %#v", localPositions)
+	}
+
+	deployPositions := actionPositions(definitions["deploy-stack"])
+	for _, required := range []string{"deploy-bundle", "patch-demo-routes", "wait-kubevirt"} {
+		if _, exists := deployPositions[required]; !exists {
+			t.Fatalf("deploy-stack is missing task %q", required)
+		}
+	}
+	if deployPositions["deploy-bundle"] >= deployPositions["patch-demo-routes"] ||
+		deployPositions["patch-demo-routes"] >= deployPositions["wait-kubevirt"] {
+		t.Fatalf("deploy-stack must patch demo routes immediately after bundle deployment; positions: %#v", deployPositions)
+	}
+
+	var patchCommands strings.Builder
+	for _, action := range definitions["patch-demo-routes"].Actions {
+		patchCommands.WriteString(action.Cmd)
+	}
+	if !strings.Contains(patchCommands.String(), ".status.observedGeneration") {
+		t.Fatal("patch-demo-routes must wait for the latest Package reconciliation before patching Pepr-managed policies")
+	}
+
+	var smokeCommands strings.Builder
+	for _, action := range definitions["smoke-test"].Actions {
+		smokeCommands.WriteString(action.Cmd)
+	}
+	for _, required := range []string{"uds-labs-authservice", "uds-labs-jwt-authz", "/api/demo-sessions"} {
+		if !strings.Contains(smokeCommands.String(), required) {
+			t.Fatalf("smoke-test does not verify demo-route policy fragment %q", required)
 		}
 	}
 }

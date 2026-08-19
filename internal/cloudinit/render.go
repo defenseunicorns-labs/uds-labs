@@ -1,9 +1,9 @@
 // Package cloudinit renders the VM bootstrap user-data for a scenario.
 //
-// The same script powers both the legacy Hetzner cloud-init path and the
-// KubeVirt cloudInitNoCloud volume — the template embeds the scenario setup.sh,
-// its verify scripts, and lab-inject.py as heredocs (ADR-0011). Extracted from
-// session.Manager so the operator can render it without the server binary.
+// The template powers the KubeVirt cloudInitNoCloud volume — it embeds the
+// scenario setup.sh, its verify scripts, and lab-inject.py as heredocs (ADR-0011).
+// Extracted from session.Manager so the operator can render it without the server
+// binary.
 package cloudinit
 
 import (
