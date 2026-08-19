@@ -9,11 +9,16 @@ import (
 	"net/http"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	kvv1 "kubevirt.io/api/core/v1"
+	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
 	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
 	"github.com/defenseunicorns-labs/uds-labs/internal/provider"
@@ -213,5 +218,10 @@ func requeueUntilExpiry(ls *labv1.LabSession) time.Duration {
 func (r *LabSessionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&labv1.LabSession{}).
+		Owns(&cdiv1.DataVolume{}).
+		Owns(&kvv1.VirtualMachineInstance{}).
+		Owns(&corev1.Secret{}).
+		Owns(&corev1.Service{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }

@@ -48,7 +48,7 @@ const (
 	workloadLabel           = "labs.uds.dev/workload"
 	workloadLabelVMI        = "vmi"
 
-	// In-VM ports (unchanged from the Hetzner VM software).
+	// In-VM ports exposed by the lab VM software.
 	portInject = 7680 // lab-inject.py (cmd/verify/navigate/services)
 	portTTYD   = 7681 // ttyd main (tmux)
 	portShell  = 7682 // ttyd direct bash
