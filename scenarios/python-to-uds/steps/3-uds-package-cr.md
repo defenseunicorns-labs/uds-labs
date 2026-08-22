@@ -4,7 +4,7 @@ The `Package` CR is what separates a Helm chart from a *UDS package*. Without it
 
 ## Write the CR
 
-```
+```bash
 cat > chart/templates/uds-package.yaml << 'EOF'
 apiVersion: uds.dev/v1alpha1
 kind: Package
@@ -95,7 +95,7 @@ Pepr translates each `allow` entry into a `NetworkPolicy` and an `AuthorizationP
 
 ## Verify
 
-```
+```bash
 grep -q "kind: Package" /root/myapp/chart/templates/uds-package.yaml && \
 grep -q "enableAuthserviceSelector" /root/myapp/chart/templates/uds-package.yaml && \
 grep -q "network" /root/myapp/chart/templates/uds-package.yaml && \

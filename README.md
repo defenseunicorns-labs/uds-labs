@@ -253,6 +253,21 @@ services:
     url: "https://grafana.admin.uds.dev"
 ```
 
+### Step Markdown code blocks
+
+Only fenced shell blocks are injected into the lab terminal when clicked. Label
+commands with `bash` (or `sh`, `shell`, or `zsh`):
+
+````markdown
+```bash
+kubectl get pods -A
+```
+````
+
+Other fenced blocks, including YAML configuration and “wrong way” examples,
+are display-only and retain syntax highlighting. Unlabeled fences are also
+display-only, so the run behavior is explicit for every command.
+
 ### setup.sh
 
 Runs in the background on the VM after boot. Must touch `/var/log/lab-setup/ready` when complete.

@@ -4,11 +4,11 @@
 
 ## Cluster access
 
-```
+```bash
 uds zarf tools kubectl get pods -A
 ```
 
-```
+```bash
 uds zarf tools monitor
 ```
 
@@ -22,6 +22,6 @@ Open the **Browser** tab to access these URLs from inside the VM — they resolv
 
 ## Deploy a UDS Package
 
-```
+```bash
 uds deploy oci://ghcr.io/defenseunicorns/packages/uds/podinfo:latest --confirm
 ```

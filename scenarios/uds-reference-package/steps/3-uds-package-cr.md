@@ -4,7 +4,7 @@ The `Package` CR is what makes a Zarf package a *UDS* package. Without it, your 
 
 ## Read the CR
 
-```
+```bash
 cat chart/templates/uds-package.yaml
 ```
 
@@ -102,7 +102,7 @@ The UDS Operator creates a Prometheus `ServiceMonitor` targeting `/metrics` on y
 
 The UDS Operator already generated VirtualServices for UDS Core itself:
 
-```
+```bash
 uds zarf tools kubectl get virtualservices -A
 ```
 
@@ -110,7 +110,7 @@ You'll see VirtualServices for Keycloak (`sso.admin.uds.dev`), the admin gateway
 
 ## Verify
 
-```
+```bash
 uds zarf tools kubectl get virtualservices -A --no-headers | wc -l
 ```
 

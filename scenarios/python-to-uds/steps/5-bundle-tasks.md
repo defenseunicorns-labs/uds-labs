@@ -6,7 +6,7 @@ The **tasks file** defines the development workflow so that `uds run dev` does t
 
 ## Bundle
 
-```
+```bash
 cat > /root/myapp/bundle/uds-bundle.yaml << 'EOF'
 kind: UDSBundle
 metadata:
@@ -44,7 +44,7 @@ packages:
 
 ## Tasks
 
-```
+```bash
 cat > /root/myapp/tasks.yaml << 'EOF'
 # yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
 includes:
@@ -91,7 +91,7 @@ The three dev commands map to three phases:
 
 ## Verify
 
-```
+```bash
 grep -q "UDSBundle" /root/myapp/bundle/uds-bundle.yaml && \
 grep -q "uds-common" /root/myapp/tasks.yaml && \
 grep -q "name: dev" /root/myapp/tasks.yaml && \

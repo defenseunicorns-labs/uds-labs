@@ -4,7 +4,7 @@ Your working directory is `/root/myapp`. The app, its `requirements.txt`, and it
 
 ## Read the app
 
-```
+```bash
 cat /root/myapp/app.py
 ```
 
@@ -16,7 +16,7 @@ Port **8080** is the one number you'll see in every layer of the stack: the Dock
 
 ## Read the Dockerfile
 
-```
+```bash
 cat /root/myapp/Dockerfile
 ```
 
@@ -31,7 +31,7 @@ cat /root/myapp/Dockerfile
 
 The lab setup is building the Docker image (`myapp:dev`) in the background. Check when it's ready:
 
-```
+```bash
 docker image ls myapp:dev
 ```
 
@@ -39,6 +39,6 @@ When you write `zarf.yaml` in step 4, you'll reference this image by name (`myap
 
 ## Verify
 
-```
+```bash
 ls /root/myapp/app.py /root/myapp/requirements.txt /root/myapp/Dockerfile
 ```

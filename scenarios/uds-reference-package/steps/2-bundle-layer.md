@@ -30,7 +30,7 @@ This breaks UDS composability in three ways:
 
 ## The right way: `bundle/uds-bundle.yaml`
 
-```
+```bash
 cat bundle/uds-bundle.yaml
 ```
 
@@ -40,7 +40,7 @@ The reference package itself (`path: ../`) is also listed as a package in the bu
 
 ## Inspect the Postgres credential adapter
 
-```
+```bash
 cat chart/templates/postgres-secret.yaml
 ```
 
@@ -50,7 +50,7 @@ That adapter demonstrates a real compatibility problem, but it is not the prefer
 
 ## `uds run dev` deploys this bundle
 
-```
+```bash
 cat tasks.yaml | grep -A5 "name: dev"
 ```
 
@@ -60,7 +60,7 @@ The `default` task (not used here) also provisions a fresh k3d cluster — usefu
 
 ## Verify
 
-```
+```bash
 grep -r "postgres-operator" zarf.yaml; echo "exit: $?"
 ```
 

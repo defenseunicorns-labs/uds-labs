@@ -6,18 +6,18 @@ The [UDS Reference Package](https://github.com/uds-packages/reference-package) i
 
 The repo has been pre-cloned for you. Move into it:
 
-```
+```bash
 cd /root/reference-package
 ```
 
 In your own environment you'd clone it with:
-```
+```bash
 git clone --depth 1 https://github.com/uds-packages/reference-package
 ```
 
 ## What's in the repo
 
-```
+```bash
 ls -1
 ```
 
@@ -33,7 +33,7 @@ Key directories:
 
 ## Read zarf.yaml
 
-```
+```bash
 cat zarf.yaml
 ```
 
@@ -48,7 +48,7 @@ Notice what is **not** in `zarf.yaml`:
 
 ## Check the image reference
 
-```
+```bash
 grep -A3 "images:" zarf.yaml
 ```
 
@@ -56,6 +56,6 @@ The container image is pulled from `ghcr.io` at build time and bundled into the 
 
 ## Verify
 
-```
+```bash
 ls chart/ values/ bundle/
 ```
