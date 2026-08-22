@@ -1,0 +1,110 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Validation, linting, and artifact cleanup
+
+---
+
+tasks:
+  - name: clean-artifacts
+    description: Remove all built Zarf packages, UDS bundles, and image tarballs
+    inputs:
+      skip:
+        description: Set to 1 to skip artifact cleanup when WIPE_CLUSTER=0
+        default: "0"
+      clean:
+        description: Clean artifacts (1 = clean)
+        default: "1"
+    actions:
+      - description: Remove build artifacts
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.clean }}" != "1" ]; then
+            echo "Skipping artifact clean"
+            exit 0
+          fi
+          echo "Cleaning build artifacts..."
+          rm -f zarf-package-*.tar.zst lab-server.tar uds-labs-*.tar
+          rm -f packages/vm-images/base.tar packages/vm-images/uds-core.tar
+          rm -f bundle/uds-bundle-*.tar.zst bundle/local/uds-bundle-*.tar.zst
+          rm -rf ~/.cache/zarf-tmp
+          echo "Done."
+
+  # ── Lint ─────────────────────────────────────────────────────────────────────
+
+  - name: lint
+    description: Run linters and static analysis
+    actions:
+      - description: Run golangci-lint
+        cmd: golangci-lint run ./...
+
+  - name: lint-all
+    description: Lint YAML and shell files without repository-wide license enforcement
+    actions:
+      - description: Lint YAML files
+        cmd: yamllint .
+      - description: Lint shell scripts
+        cmd: |
+          set -euo pipefail
+          find . -type f -name '*.sh' -not -path './.git/*' -print0 \
+            | xargs -0 -r shellcheck -e SC1091
+
+
+  - name: preflight
+    description: Verify required tools, KVM access, and image config
+    inputs:
+    actions:
+      - description: Check tools, KVM, package artifacts, and image config
+        cmd: |
+          FAILED=0
+          for tool in kubectl zarf uds curl jq yq ip docker; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: missing required tool: $tool"; FAILED=1; }
+          done
+          ls /dev/kvm >/dev/null 2>&1 || { echo "ERROR: /dev/kvm not found — enable KVM in BIOS (AMD-V / Intel VT-x)"; FAILED=1; }
+          [ "$FAILED" = "0" ] || exit 1
+      - task: validate-package-config
+
+  - name: validate-package-config
+    description: Validate deployment ordering without building images
+    actions:
+      - description: Validate VM image server and CDI import lifecycle
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+          VM_MANIFEST=$(mktemp)
+          trap 'rm -f "$VM_MANIFEST"' EXIT
+          helm template vm-images packages/vm-images/chart > "$VM_MANIFEST"
+          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/base:' "$VM_MANIFEST"
+          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/uds-core:' "$VM_MANIFEST"
+          rg -q 'source:' "$VM_MANIFEST"
+          rg -q 'http:' "$VM_MANIFEST"
+          if rg -q 'registry:|secretRef:|ZARF_REGISTRY|CDI_REGISTRY|zarf-docker-registry' "$VM_MANIFEST"; then
+            echo "ERROR: golden PVCs must import only through the image-server HTTP services" >&2
+            exit 1
+          fi
+          echo "VM-image HTTP import preflight passed"
+
+  - name: dry-run
+    description: Render and validate Helm and Zarf packages without a cluster
+    actions:
+      - description: Run packaging contracts and Helm lint
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+          GOCACHE=/tmp/uds-labs-go-cache go test . -run 'TestHelmChart|TestVMImage|TestDevelopmentBundle|TestLocalE2E|TestApplicationImage'
+          helm lint chart
+          helm lint packages/vm-images/chart
+          helm template uds-labs chart \
+            --namespace uds-labs \
+            --set domain=example.test \
+            --set provider=kubevirt \
+            >/dev/null
+          uds inspect bundle/local/uds-bundle.yaml --no-progress --no-color >/dev/null
+      - description: Lint and render Zarf package definitions
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+          uds zarf dev lint .
+          uds zarf dev inspect manifests . \
+            --deploy-set-variables DOMAIN=example.test \
+            --deploy-set-variables PROVIDER=kubevirt \
+            >/dev/null

@@ -1,4 +1,4 @@
-# Build Your Own UDS Package
+# Package a Stateless App for UDS
 
 UDS packaging has a specific anatomy: a Helm chart delivers the workload, a Zarf package bundles the chart and its images, a UDS Package CR declares the network and SSO policy, and a UDS bundle composes everything for deployment.
 

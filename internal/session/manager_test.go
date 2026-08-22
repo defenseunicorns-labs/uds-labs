@@ -37,7 +37,7 @@ func TestCreateSerializesConcurrentCapacityChecks(t *testing.T) {
 		go func(id string) {
 			defer wg.Done()
 			<-start
-			_, err := mgr.Create(context.Background(), id, "uds-package-quickstart", id+"@example.com")
+			_, err := mgr.Create(context.Background(), id, "python-to-uds", id+"@example.com")
 			errs <- err
 		}(clientID)
 	}
@@ -72,7 +72,7 @@ func TestCreateCountsPausedAndRetainedFailedSessionsAgainstCapacity(t *testing.T
 				Status: labv1.LabSessionStatus{Phase: phase},
 			}
 			mgr := sessionTestClient(t, existing)
-			_, err := mgr.Create(context.Background(), "new-client", "uds-package-quickstart", "new@example.com")
+			_, err := mgr.Create(context.Background(), "new-client", "python-to-uds", "new@example.com")
 			if !errors.Is(err, ErrCapacityReached) {
 				t.Fatalf("create error = %v, want capacity reached", err)
 			}

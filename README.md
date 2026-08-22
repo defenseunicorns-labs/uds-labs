@@ -47,7 +47,7 @@ retaining that Session PVC; resume reattaches the same disk.
 - `uds`, `zarf`, `kubectl`, `docker`, `jq`, `ip`, `curl`
 - [virtctl](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) (for VM console/SSH access)
 - Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
-- Placement-enabled CDI package repo at `~/src/github.com/uds-packages/containerized-data-importer`
+- Published CDI UDS package access to `~/src/github.com/uds-packages/containerized-data-importer`
 
 **First-time only:**
 - Internet access (pulls Ubuntu cloud image and standalone UDS Core packages)
@@ -61,9 +61,9 @@ uses empty placement, the k3s `local-path` StorageClass, the `uds.dev` domain,
 and authentication without an environment-specific group requirement.
 
 ```bash
+# sudo is needed for k3s uninstall/install
 sudo -v
-uds run local-e2e \
-  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
+uds run local-e2e
 ```
 
 `uds run dev` is a backward-compatible alias for the same flow. It:
@@ -72,7 +72,7 @@ uds run local-e2e \
 2. Installs MetalLB and initializes Zarf.
 3. Deploys the standalone UDS Core 1.10.0 base and identity Zarf packages
    directly onto bare k3s; no k3d bundle is used.
-4. Pulls the published KubeVirt package and stages CDI.
+4. Pulls the published KubeVirt and CDI packages.
 5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
 6. Builds and deploys the local UDS Labs bundle.
 7. Restores demo-route auth exemptions after Package reconciliation.
@@ -87,7 +87,7 @@ After completion:
 
 Open the UI, sign in, start a Lab, and verify the terminal/browser experience.
 For an operator-only check, create a Session directly with
-`./scripts/create-test-session.sh`.
+`uds run create-test-session`.
 
 ### VM-image choices
 
@@ -140,9 +140,9 @@ The normal bundle deployment imports from the packaged image-server Services.
 Use this host-served path only as a troubleshooting fallback:
 
 ```bash
-BASE_QCOW2=packer/output/base/lab-base.qcow2 \
-UDS_CORE_QCOW2=packer/output/uds-core/lab-playground-uds-core.qcow2 \
-./scripts/create-golden-pvc.sh
+uds run populate-golden-pvcs \
+  --with base_qcow2=packer/output/base/lab-base.qcow2 \
+  --with uds_core_qcow2=packer/output/uds-core/lab-playground-uds-core.qcow2
 ```
 
 ## Local Development
@@ -151,7 +151,7 @@ See [Local development](docs/local-development.md) for prerequisites, common
 iteration loops, task inputs, troubleshooting, and the complete repository task
 reference.
 
-Discover tasks directly from `tasks.yaml`:
+Discover tasks from the root entrypoint (implementations live under `tasks/`):
 
 ```bash
 uds run --list       # repository tasks
@@ -197,6 +197,7 @@ virtctl ssh --local-ssh-opts="-i $(pwd)/packer/packer-key" \
 | `PORT` | `8080` | HTTP listen port |
 | `SCENARIOS_DIR` | *(embedded)* | Override embedded scenarios with a local directory |
 | `STATIC_DIR` | *(embedded)* | Override embedded static files |
+| `MAX_ACTIVE_SESSIONS` | 1 | Number of lab sessions/vms that can be run at a time |
 
 ## Creating a Scenario
 
@@ -218,12 +219,15 @@ scenarios/my-scenario/
 
 ```yaml
 title: "My Scenario"
-description: "What this lab teaches."
+description: "What the learner will do."
+outcome: "The capability the learner can demonstrate afterward."
+prerequisites:
+  - "Basic Kubernetes familiarity"
 duration: 45
 difficulty: beginner  # beginner | intermediate | advanced
 browser: false        # true = provision Chromium + noVNC
 tier: tools           # base | tools | uds-core — selects which golden PVC to clone
-
+size: medium
 steps:
   - title: "Step one"
     text: steps/step1.md
@@ -231,6 +235,8 @@ steps:
   - title: "Step two"
     text: steps/step2.md
 ```
+
+The catalog order, sections, and external learning resources are defined centrally in `scenarios/catalog.yaml`. Add a `scenario: <directory-id>` item there to make a scenario visible in the learner catalog. Prerequisites are advisory and never block launch.
 
 The `tier` field determines which golden PVC is cloned for the session:
 - `base` — minimal Ubuntu + terminal tools
@@ -308,7 +314,7 @@ internal/
   session/      # session manager, session state
 packer/         # QEMU packer builds for each VM tier
 chart/          # Helm chart for uds-labs deployment
-scripts/        # dev workflow scripts
+tasks/          # grouped UDS development tasks
 vm/             # user-data.sh.gotmpl — cloud-init for lab VMs
 scenarios/      # lab scenario definitions
 
@@ -334,9 +340,7 @@ create the package with `uds run build-vm-images-package`, then publish it.
 gh workflow run bump-version.yaml -f bump_type=minor
 ```
 
-The default deployment bundle consumes the published KubeVirt UDS package and
-stages the CDI package from
-`~/src/github.com/uds-packages/containerized-data-importer`. It uses an
+The default deployment bundle consumes the published KubeVirt and CDI UDS packages. It uses an
 ignored environment configuration copied from `bundle/uds-config.example.yaml`.
 The committed `bundle/local/` profile is separate and needs no deployment config.
 Package tarballs and environment configuration remain ignored build artifacts.
@@ -351,7 +355,7 @@ uds run redeploy
 kubectl logs -n uds-labs -l app=lab-operator -f
 
 # Create a test session with an expiry relative to the current time
-./scripts/create-test-session.sh
+uds run create-test-session
 kubectl get labsession -A -w
 kubectl get vmi -n uds-labs-vms -w
 ```

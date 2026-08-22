@@ -1,0 +1,463 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Local cluster lifecycle and VM infrastructure tasks
+
+---
+
+includes:
+  - quality: quality.yaml
+
+tasks:
+  - name: wipe-k3s
+    description: Uninstall k3s if present
+    inputs:
+      skip:
+        description: Set to 1 to skip this step
+        default: "0"
+      run:
+        description: Run this step (1 = run)
+        default: "1"
+    actions:
+      - description: Uninstall k3s
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Skipping k3s wipe (skip=1)"
+            exit 0
+          fi
+          if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+            echo "Uninstalling k3s..."
+            sudo /usr/local/bin/k3s-uninstall.sh
+            sleep 3
+          else
+            echo "k3s not installed — nothing to wipe"
+          fi
+
+  - name: install-k3s
+    description: Install k3s with traefik and servicelb disabled
+    inputs:
+      skip:
+        description: Set to 1 to skip this step
+        default: "0"
+      run:
+        description: Run this step (1 = run)
+        default: "1"
+    actions:
+      - description: Install k3s and copy kubeconfig
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Skipping k3s install (skip=1)"
+            exit 0
+          fi
+          # --disable=traefik  -> avoids gateway-api CRD conflict with UDS Core
+          # --disable=servicelb -> replaced by MetalLB for separate admin+tenant IPs
+          # Download and verify the binary first. The installer otherwise fetches
+          # the checksum without retries, making transient GitHub failures fatal.
+          K3S_VERSION=v1.36.2+k3s1
+          K3S_RELEASE_VERSION=$(printf '%s' "$K3S_VERSION" | sed 's/+/%2B/g')
+          K3S_TMP=$(mktemp -d)
+          trap 'rm -rf "$K3S_TMP"' EXIT
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+            "https://github.com/k3s-io/k3s/releases/download/${K3S_RELEASE_VERSION}/k3s" \
+            -o "$K3S_TMP/k3s"
+          printf '%s  %s\n' \
+            65a55ec56c24eab44383086166ec620a491952b7e23941a49ddca6e8a4c4b4de \
+            "$K3S_TMP/k3s" | sha256sum --check --status
+          sudo install -m 0755 "$K3S_TMP/k3s" /usr/local/bin/k3s
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+            https://get.k3s.io -o "$K3S_TMP/install.sh"
+          INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION="$K3S_VERSION" \
+            sh "$K3S_TMP/install.sh" --disable=traefik --disable=servicelb
+          mkdir -p "$HOME/.kube"
+          sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+          sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+        maxTotalSeconds: 300
+      - description: Wait for k3s node Ready
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
+          until kubectl get nodes >/dev/null 2>&1; do sleep 2; done
+          kubectl wait node --all --for=condition=Ready --timeout=120s
+          kubectl get nodes
+        maxTotalSeconds: 130
+
+  - name: install-metallb
+    description: Install MetalLB and configure IP pool (auto-detects host subnet)
+    inputs:
+      skip:
+        description: Set to 1 to skip this step
+        default: "0"
+      run:
+        description: Run this step (1 = run)
+        default: "1"
+      version:
+        description: MetalLB version
+        default: v0.14.9
+      range:
+        description: "Override MetalLB IP range (auto-detected from host IP if empty)"
+        default: ""
+    actions:
+      - description: Apply MetalLB manifests
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Skipping MetalLB install (skip=1)"
+            exit 0
+          fi
+          kubectl apply -f "https://raw.githubusercontent.com/metallb/metallb/${{ .inputs.version }}/config/manifests/metallb-native.yaml"
+        maxTotalSeconds: 120
+      - description: Wait for MetalLB controller
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
+          kubectl wait -n metallb-system deployment/controller --for=condition=Available --timeout=120s
+          kubectl rollout status daemonset/speaker -n metallb-system --timeout=60s || true
+        maxTotalSeconds: 130
+      - description: Configure MetalLB IP pool
+        cmd: |
+          # shellcheck shell=bash
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
+          RANGE="${{ .inputs.range }}"
+          if [ -z "$RANGE" ]; then
+            LOCAL_IP=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[^ ]+' || true)
+            [ -n "$LOCAL_IP" ] || { echo "ERROR: cannot detect local IP — set range input: --with range=x.x.x.a-x.x.x.b"; exit 1; }
+            SUBNET=$(echo "$LOCAL_IP" | cut -d. -f1-3)
+            RANGE="${SUBNET}.200-${SUBNET}.250"
+          fi
+          echo "MetalLB pool: $RANGE"
+          printf '%s\n' \
+            'apiVersion: metallb.io/v1beta1' \
+            'kind: IPAddressPool' \
+            'metadata:' \
+            '  name: local-pool' \
+            '  namespace: metallb-system' \
+            'spec:' \
+            '  addresses:' \
+            "  - ${RANGE}" \
+            '---' \
+            'apiVersion: metallb.io/v1beta1' \
+            'kind: L2Advertisement' \
+            'metadata:' \
+            '  name: local-adv' \
+            '  namespace: metallb-system' \
+            | kubectl apply -f -
+
+  - name: zarf-init
+    description: Initialize Zarf in the cluster
+    inputs:
+      skip:
+        description: Set to 1 to skip this step
+        default: "0"
+      run:
+        description: Run this step (1 = run)
+        default: "1"
+    actions:
+      - description: Run zarf init
+        cmd: |
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Skipping zarf init (skip=1)"
+            exit 0
+          fi
+          ZARF_INIT_LOG=$(mktemp)
+          trap 'rm -f "$ZARF_INIT_LOG"' EXIT
+          ZARF_INIT_ATTEMPT=1
+          while [ "$ZARF_INIT_ATTEMPT" -le 3 ]; do
+            : > "$ZARF_INIT_LOG"
+            if zarf init --confirm > "$ZARF_INIT_LOG" 2>&1; then
+              cat "$ZARF_INIT_LOG"
+              break
+            fi
+            cat "$ZARF_INIT_LOG"
+            if grep -q 'requires a zarf-init package, but one was not found' "$ZARF_INIT_LOG"; then
+              ZARF_VERSION=$(zarf version 2>/dev/null | head -1)
+              INIT_PKG="oci://ghcr.io/zarf-dev/packages/init:${ZARF_VERSION}"
+              echo "Zarf init package missing locally — initializing from ${INIT_PKG}..." >&2
+              zarf init "$INIT_PKG" --confirm
+              break
+            fi
+            if ! grep -q 'failed to delete injector resources: configmaps "zarf-payload-' "$ZARF_INIT_LOG"; then
+              exit 1
+            fi
+            if [ "$ZARF_INIT_ATTEMPT" -eq 3 ]; then
+              echo "Zarf init failed after 3 injector cleanup retries" >&2
+              exit 1
+            fi
+            echo "Retrying Zarf init after injector ConfigMap cleanup race (attempt $((ZARF_INIT_ATTEMPT + 1))/3)..." >&2
+            kubectl -n zarf delete pod/injector service/zarf-injector configmap/rust-binary --ignore-not-found
+            for resource in $(kubectl -n zarf get configmaps -o name | grep '^configmap/zarf-payload-' || true); do
+              kubectl -n zarf delete "$resource" --ignore-not-found
+            done
+            ZARF_INIT_ATTEMPT=$((ZARF_INIT_ATTEMPT + 1))
+          done
+        maxTotalSeconds: 600
+
+  - name: wait-kubevirt
+    description: Wait for KubeVirt to reach Available status
+    actions:
+      - description: Wait for KubeVirt Available
+        cmd: kubectl -n kubevirt wait kubevirt kubevirt --for=condition=Available --timeout=300s
+        maxTotalSeconds: 310
+
+  - name: populate-golden-pvcs
+    description: Import pre-built qcow2 images into golden PVCs (auto-skips if qcow2s not found)
+    inputs:
+      skip:
+        description: Set to 1 to force-skip import regardless of file presence
+        default: "0"
+      base_qcow2:
+        description: Path to base qcow2
+        default: packer/output/base/lab-base.qcow2
+      uds_core_qcow2:
+        description: Path to UDS Core qcow2
+        default: packer/output/uds-core/lab-playground-uds-core.qcow2
+      namespace:
+        description: Namespace for golden PVCs
+        default: uds-labs-vms
+      host_ip:
+        description: Host IP reachable from cluster pods (auto-detected when empty)
+        default: ""
+      port_base:
+        description: Temporary HTTP port for the base image
+        default: "18888"
+      port_uds_core:
+        description: Temporary HTTP port for the UDS Core image
+        default: "18890"
+    actions:
+      - description: Import golden PVCs through temporary CDI HTTP sources
+        maxTotalSeconds: 3600
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+
+          if [ "${{ .inputs.skip }}" = "1" ]; then
+            echo "Skipping golden PVC import (skip=1)"
+            exit 0
+          fi
+
+          BASE_QCOW2="${{ .inputs.base_qcow2 }}"
+          UDS_CORE_QCOW2="${{ .inputs.uds_core_qcow2 }}"
+          GOLDEN_NAMESPACE="${{ .inputs.namespace }}"
+          HOST_IP="${{ .inputs.host_ip }}"
+          PORT_BASE="${{ .inputs.port_base }}"
+          PORT_UDS_CORE="${{ .inputs.port_uds_core }}"
+
+          if [ ! -f "$BASE_QCOW2" ] && [ ! -f "$UDS_CORE_QCOW2" ]; then
+            echo "No qcow2 files found at expected paths — skipping golden PVC import"
+            echo "Build images first:  uds run build-images"
+            echo "VM provisioning will fail until golden PVCs are populated!"
+            exit 0
+          fi
+
+          command -v kubectl >/dev/null 2>&1 || { echo "ERROR: kubectl not found" >&2; exit 1; }
+          command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found (needed for HTTP server)" >&2; exit 1; }
+          command -v curl >/dev/null 2>&1 || { echo "ERROR: curl not found" >&2; exit 1; }
+
+          log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+          warn() { printf '[WARN] %s\n' "$*" >&2; }
+          die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
+          HTTP_PIDS=()
+          cleanup() {
+            for pid in "${HTTP_PIDS[@]}"; do
+              if kill -0 "$pid" 2>/dev/null; then
+                kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+              fi
+            done
+          }
+          trap cleanup EXIT
+
+          # Avoid stale temporary servers from an interrupted import.
+          for port in "$PORT_BASE" "$PORT_UDS_CORE"; do
+            if command -v fuser >/dev/null 2>&1 && fuser -k "${port}/tcp" >/dev/null 2>&1; then
+              warn "Killed stale server on port $port"
+            elif command -v lsof >/dev/null 2>&1; then
+              stale_pid=$(lsof -ti "tcp:${port}" 2>/dev/null || true)
+              if [ -n "$stale_pid" ]; then
+                warn "Killed stale server on port $port (PID $stale_pid)"
+                kill -- "-$stale_pid" 2>/dev/null || kill "$stale_pid" 2>/dev/null || true
+              fi
+            fi
+            sleep 0.5
+          done
+
+          kubectl get namespace "$GOLDEN_NAMESPACE" >/dev/null 2>&1 \
+            || die "namespace $GOLDEN_NAMESPACE not found — deploy the local bundle first"
+          kubectl get crd datavolumes.cdi.kubevirt.io >/dev/null 2>&1 \
+            || die "CDI DataVolume CRD not found — deploy CDI first"
+
+          log "Waiting for CDI to be Available..."
+          cdi_deadline=$(( $(date +%s) + 180 ))
+          while true; do
+            cdi_phase=$(kubectl get cdi cdi -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            if [ "$cdi_phase" = "Deployed" ]; then
+              log "CDI phase: Deployed"
+              break
+            fi
+            [ "$(date +%s)" -gt "$cdi_deadline" ] \
+              && die "CDI not Deployed after 3m (phase=$cdi_phase)"
+            printf '.'
+            sleep 3
+          done
+          printf '\n'
+
+          if [ -z "$HOST_IP" ]; then
+            HOST_IP=$(ip route get 1.1.1.1 2>/dev/null \
+              | awk '/src/{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')
+          fi
+          [ -n "$HOST_IP" ] || die "could not detect host IP — set the host_ip input and retry"
+          log "Host IP for CDI HTTP import: $HOST_IP"
+
+          import_image() {
+            local tier="$1" pvc_name="$2" qcow2="$3" port="$4"
+            [ -f "$qcow2" ] || die "qcow2 not found: $qcow2"
+
+            local qcow2_dir qcow2_file server_pid image_url virtual_size_bytes disk_size
+            qcow2_dir=$(cd "$(dirname "$qcow2")" && pwd)
+            qcow2_file=$(basename "$qcow2")
+            log "Importing $tier -> $pvc_name from $qcow2 (port $port)..."
+
+            setsid python3 -m http.server "$port" --directory "$qcow2_dir" >/dev/null 2>&1 &
+            server_pid=$!
+            HTTP_PIDS+=("$server_pid")
+            sleep 2
+            curl --fail --silent --show-error --max-time 10 \
+              "http://127.0.0.1:${port}/${qcow2_file}" -o /dev/null \
+              || die "HTTP server on port $port is not serving $qcow2_file"
+
+            image_url="http://${HOST_IP}:${port}/${qcow2_file}"
+            virtual_size_bytes=0
+            if command -v qemu-img >/dev/null 2>&1; then
+              virtual_size_bytes=$(qemu-img info --output=json "$qcow2" \
+                | python3 -c 'import json, sys; print(json.load(sys.stdin)["virtual-size"])' \
+                2>/dev/null || echo 0)
+            fi
+            disk_size="40Gi"
+            if [ "$virtual_size_bytes" -gt 0 ] 2>/dev/null; then
+              disk_size="$(( (virtual_size_bytes + 1073741823) / 1073741824 ))Gi"
+            fi
+            log "Disk size for $pvc_name: $disk_size"
+
+            kubectl delete datavolume "$pvc_name" -n "$GOLDEN_NAMESPACE" --ignore-not-found=true
+            cat <<EOF | kubectl apply -f -
+          apiVersion: cdi.kubevirt.io/v1beta1
+          kind: DataVolume
+          metadata:
+            name: ${pvc_name}
+            namespace: ${GOLDEN_NAMESPACE}
+            labels:
+              labs.uds.dev/golden-pvc: "true"
+              labs.uds.dev/tier: ${tier}
+          spec:
+            source:
+              http:
+                url: "${image_url}"
+            pvc:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: ${disk_size}
+          EOF
+
+            log "Waiting for DataVolume $pvc_name to reach Succeeded..."
+            local deadline=$(( $(date +%s) + 1800 )) phase
+            while true; do
+              phase=$(kubectl get datavolume "$pvc_name" -n "$GOLDEN_NAMESPACE" \
+                -o jsonpath='{.status.phase}' 2>/dev/null || echo Unknown)
+              case "$phase" in
+                Succeeded)
+                  log "$pvc_name import complete"
+                  break
+                  ;;
+                Failed)
+                  die "$pvc_name import failed; inspect CDI controller logs"
+                  ;;
+              esac
+              [ "$(date +%s)" -gt "$deadline" ] \
+                && die "$pvc_name import timed out after 30m (phase=$phase)"
+              printf '.'
+              sleep 10
+            done
+            printf '\n'
+            kill -- "-$server_pid" 2>/dev/null || kill "$server_pid" 2>/dev/null || true
+          }
+
+          imported=0
+          if [ -f "$BASE_QCOW2" ]; then
+            import_image base golden-base "$BASE_QCOW2" "$PORT_BASE"
+            imported=$((imported + 1))
+          else
+            warn "base qcow2 not found — skipping base tier"
+          fi
+          if [ -f "$UDS_CORE_QCOW2" ]; then
+            import_image uds-core golden-uds-core "$UDS_CORE_QCOW2" "$PORT_UDS_CORE"
+            imported=$((imported + 1))
+          else
+            warn "UDS Core qcow2 not found — skipping UDS Core tier"
+          fi
+          [ "$imported" -gt 0 ] || die "No qcow2 files provided"
+
+          echo ""
+          echo "Golden PVCs ready in namespace: ${GOLDEN_NAMESPACE}"
+          [ -f "$BASE_QCOW2" ] && echo "  base:     golden-base"
+          [ -f "$UDS_CORE_QCOW2" ] && echo "  uds-core: golden-uds-core"
+
+  - name: deploy-local-uds-core
+    description: Deploy pinned standalone UDS Core packages onto the existing bare-k3s cluster
+    inputs:
+      run:
+        description: Deploy UDS Core (1) or preserve the existing installation (0)
+        default: "1"
+      base_package:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      identity_package:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+    actions:
+      - description: Deploy standalone UDS Core packages
+        cmd: |
+          if [ "${{ .inputs.run }}" != "1" ]; then
+            echo "Preserving existing UDS Core installation"
+            exit 0
+          fi
+          uds zarf package deploy "${{ .inputs.base_package }}" \
+            --set-variables DOMAIN=uds.dev \
+            --values bundle/local/core-base-values.yaml \
+            --confirm
+          uds zarf package deploy "${{ .inputs.identity_package }}" \
+            --set-variables DOMAIN=uds.dev \
+            --values bundle/local/core-identity-values.yaml \
+            --confirm
+          kubectl wait --for=condition=Ready package/keycloak -n keycloak --timeout=10m
+          kubectl wait --for=condition=Ready package/authservice -n authservice --timeout=10m
+        maxTotalSeconds: 1800
+
+  - name: bootstrap-local-cluster
+    description: Local-only bootstrap for k3s, MetalLB, and Zarf init. Bundle deploy remains the canonical test path.
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe/bootstrap, 0 = skip bootstrap)
+        default: "1"
+    actions:
+      - task: quality:preflight
+      - task: wipe-k3s
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+      - task: install-k3s
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+      - task: install-metallb
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+      - task: zarf-init
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+
+  - name: verify-cluster
+    description: Print cluster node and workload status summary
+    actions:
+      - description: Cluster status summary
+        cmd: |
+          kubectl get nodes
+          kubectl -n kubevirt get kubevirt kubevirt \
+            -o jsonpath='KubeVirt status: {.status.phase}{"\n"}' || true
+          echo "Non-running pods (if any):"
+          kubectl get pods -A | grep -v Running | grep -v Completed | grep -v NAME || true

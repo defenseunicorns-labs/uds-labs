@@ -2,11 +2,12 @@
 
 You've deployed the UDS Reference Package end-to-end and seen every major UDS integration in action:
 
-- **Zarf** scoped the package to exactly one thing: the application. No Postgres, no Keycloak, no Istio — those are someone else's responsibility.
-- **The bundle** composed `postgres-operator` and `reference-package` at the right layer, with full override capability exposed to the operator deploying it.
-- **The UDS Package CR** declared what the app needs — exposed port, egress to Postgres and Keycloak, SSO client config — and Pepr turned that into VirtualServices, NetworkPolicies, AuthorizationPolicies, ServiceMonitors, and a Keycloak client registration automatically.
+- **Zarf** scoped the application package to the application and its UDS integration, not shared infrastructure dependencies.
+- **The bundle** composed `postgres-operator` and `reference-package`, with environment-specific configuration at the deployment layer.
+- **The UDS Package CR** declared the app's exposure, network, SSO, and monitoring needs; the UDS Operator generated the supporting platform resources.
+- **The Postgres adapter** solved a connection-string compatibility problem, while also showing why render-time Secret lookup can race operator reconciliation.
 - **Ambient mesh** enforced mTLS and captured metrics at the node level via ztunnel — no sidecar injection required.
 
-This is the reference pattern. When you author your own UDS package, follow this exact structure: application code in the Zarf package, infrastructure operators in the bundle, network and SSO policy in the UDS Package CR.
+Carry the boundaries forward rather than copying every line: application and UDS integration in the application package, shared dependencies in the bundle, direct Secret references where the application supports them, and platform needs in the UDS Package CR.
 
-**Next:** Try *Build Your Own UDS Package* — start from a Python Flask app and author every layer yourself from scratch.
+**Next:** Try *Package a Stateless App for UDS* — start from a Python Flask app and author each package layer.

@@ -132,11 +132,26 @@ func TestHelmChart_UsesPackagedImageByDefault(t *testing.T) {
 	}
 }
 
+func TestHelmChart_KubeVirtProviderExemptsCDIClonePodsFromIstioOverridePolicy(t *testing.T) {
+	out := helmTemplate(t)
+	for _, expected := range []string{
+		"kind: Exemption",
+		"namespace: uds-policy-exemptions",
+		"RestrictIstioTrafficOverrides",
+		"name: ^(cdi-(upload|clone-source)-.*|[0-9a-f-]{36}-source-pod)$",
+		"namespace: uds-labs-vms",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Errorf("CDI clone pod exemption missing %q", expected)
+		}
+	}
+}
+
 func TestHelmChart_PodProviderOmitsKubeVirtResources(t *testing.T) {
 	out := helmTemplate(t, "--set", "provider=pod")
-	for _, resource := range []string{"datavolumes", "virtualmachineinstances"} {
+	for _, resource := range []string{"datavolumes", "virtualmachineinstances", "kind: Exemption"} {
 		if strings.Contains(out, resource) {
-			t.Errorf("pod provider unexpectedly rendered %s RBAC", resource)
+			t.Errorf("pod provider unexpectedly rendered %s", resource)
 		}
 	}
 }

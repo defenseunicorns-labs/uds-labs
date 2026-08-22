@@ -1,6 +1,8 @@
 # Copyright 2026 Defense Unicorns
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
+---
+
 includes:
   - attest: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/attest.yaml
   - build: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/build.yaml
@@ -16,9 +18,17 @@ includes:
   - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/actions.yaml
   - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/upgrade.yaml
   - uds-publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/publish.yaml
-tasks:
-  # ── Clean build artifacts ─────────────────────────────────────────────────────
+  - quality: tasks/quality.yaml
+  - images: tasks/images.yaml
+  - cluster: tasks/cluster.yaml
+  - access: tasks/access.yaml
+  - workflow: tasks/workflow.yaml
 
+# The implementations are grouped under tasks/. These adapters keep the
+# original unqualified task names working while tasks.yaml remains the single
+# entrypoint for `uds run`.
+
+tasks:
   - name: clean-artifacts
     description: Remove all built Zarf packages, UDS bundles, and image tarballs
     inputs:
@@ -29,26 +39,15 @@ tasks:
         description: Clean artifacts (1 = clean)
         default: "1"
     actions:
-      - description: Remove build artifacts
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.clean }}" != "1" ]; then
-            echo "Skipping artifact clean"
-            exit 0
-          fi
-          echo "Cleaning build artifacts..."
-          rm -f zarf-package-*.tar.zst lab-server.tar uds-labs-*.tar
-          rm -f packages/vm-images/base.tar packages/vm-images/uds-core.tar
-          rm -f bundle/uds-bundle-*.tar.zst bundle/local/uds-bundle-*.tar.zst
-          rm -rf ~/.cache/zarf-tmp
-          echo "Done."
-
-  # ── Lint ─────────────────────────────────────────────────────────────────────
+      - task: quality:clean-artifacts
+        with:
+          skip: ${{ .inputs.skip }}
+          clean: ${{ .inputs.clean }}
 
   - name: lint
     description: Run linters and static analysis
     actions:
-      - description: Run golangci-lint
-        cmd: golangci-lint run ./...
+      - task: quality:lint
 
   - name: lint:all
     description: Lint YAML and shell files without repository-wide license enforcement
@@ -61,9 +60,25 @@ tasks:
           find . -type f -name '*.sh' -not -path './.git/*' -print0 \
             | xargs -0 -r shellcheck -e SC1091
 
-  # ── Build VM images ───────────────────────────────────────────────────────────
-  # Full packer run takes 60+ min. Pass skip=1 to skip image builds entirely,
-  # or skip individual tiers with skip_base/skip_uds_core.
+  - name: lint-all
+    description: Run the grouped shell and YAML lint task
+    actions:
+      - task: quality:lint-all
+
+  - name: preflight
+    description: Verify required tools, KVM access, and image config
+    actions:
+      - task: quality:preflight
+
+  - name: validate-package-config
+    description: Validate deployment ordering without building images
+    actions:
+      - task: quality:validate-package-config
+
+  - name: dry-run
+    description: Render and validate Helm and Zarf packages without a cluster
+    actions:
+      - task: quality:dry-run
 
   - name: build-images
     description: Build VM qcow2 images with packer (base → uds-core)
@@ -77,96 +92,125 @@ tasks:
       skip_uds_core:
         description: Skip UDS Core image build
         default: "0"
+      base_image:
+        description: Existing base qcow2 to use when skip_base=1
+        default: output/base/lab-base.qcow2
       build:
         description: Build packer images (1 = build)
         default: "1"
     actions:
-      - description: Generate packer SSH keypair if not present
-        cmd: |
-          if [ ! -f packer/packer-key ]; then
-            echo "Generating packer SSH keypair..."
-            ssh-keygen -t ed25519 -f packer/packer-key -N "" -q
-          fi
-          ssh-keygen -y -f packer/packer-key > packer/packer-key.pub
-      - description: Build packer images
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.build }}" != "1" ]; then
-            echo "Skipping packer builds (skip=1)"
-            exit 0
-          fi
-          cd packer || exit
-          SKIP_BASE="${{ .inputs.skip_base }}" \
-          SKIP_UDS_CORE="${{ .inputs.skip_uds_core }}" \
-          ./build-images-qemu.sh
-        maxTotalSeconds: 7200
+      - task: images:build-images
+        with:
+          skip: ${{ .inputs.skip }}
+          skip_base: ${{ .inputs.skip_base }}
+          skip_uds_core: ${{ .inputs.skip_uds_core }}
+          base_image: ${{ .inputs.base_image }}
+          build: ${{ .inputs.build }}
 
-  # ── Atomic cluster-setup steps ───────────────────────────────────────────────
-  # Each step is independently runnable. Composite tasks (cluster-up, dev)
-  # compose these. Pass skip=1 to any step to no-op it from a composite task.
-
-  - name: preflight
-    description: Verify required tools, KVM access, CDI package input, and image config
+  - name: build-vm-images
+    description: Run images:build-vm-images
     inputs:
-      cdi_package:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
+      build:
+        description: Build local VM image-server containers (1 = build)
+        default: "1"
+      base_qcow2:
+        description: Path to base qcow2 (combined base+tools image)
+        default: packer/output/base/lab-base.qcow2
+      uds_core_qcow2:
+        description: Path to uds-core qcow2
+        default: packer/output/uds-core/lab-playground-uds-core.qcow2
+      tag:
+        description: Image tag (defaults to package version)
+        default: ""
     actions:
-      - description: Check tools, KVM, package artifacts, and image config
-        cmd: |
-          FAILED=0
-          for tool in kubectl zarf uds curl jq yq ip docker; do
-            command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: missing required tool: $tool"; FAILED=1; }
-          done
-          ls /dev/kvm >/dev/null 2>&1 || { echo "ERROR: /dev/kvm not found — enable KVM in BIOS (AMD-V / Intel VT-x)"; FAILED=1; }
-          [ -f "${{ .inputs.cdi_package }}" ] || { echo "ERROR: CDI package artifact not found: ${{ .inputs.cdi_package }}"; FAILED=1; }
-          [ "$FAILED" = "0" ] || exit 1
-      - task: validate-package-config
+      - task: images:build-vm-images
+        with:
+          build: ${{ .inputs.build }}
+          base_qcow2: ${{ .inputs.base_qcow2 }}
+          uds_core_qcow2: ${{ .inputs.uds_core_qcow2 }}
+          tag: ${{ .inputs.tag }}
 
-  - name: validate-package-config
-    description: Validate deployment ordering without building images
+  - name: push-vm-images
+    description: Push VM image server container images to ghcr.io
+    inputs:
+      tag:
+        description: Image tag to push (defaults to package version)
+        default: ""
     actions:
-      - description: Validate VM image server and CDI import lifecycle
-        cmd: |
-          # shellcheck shell=bash
-          set -euo pipefail
-          VM_MANIFEST=$(mktemp)
-          trap 'rm -f "$VM_MANIFEST"' EXIT
-          helm template vm-images packages/vm-images/chart > "$VM_MANIFEST"
-          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/base:' "$VM_MANIFEST"
-          rg -q 'image: ghcr.io/defenseunicorns-labs/uds-labs-vm-images/uds-core:' "$VM_MANIFEST"
-          rg -q 'source:' "$VM_MANIFEST"
-          rg -q 'http:' "$VM_MANIFEST"
-          if rg -q 'registry:|secretRef:|ZARF_REGISTRY|CDI_REGISTRY|zarf-docker-registry' "$VM_MANIFEST"; then
-            echo "ERROR: golden PVCs must import only through the image-server HTTP services" >&2
-            exit 1
-          fi
-          echo "VM-image HTTP import preflight passed"
+      - task: images:push-vm-images
+        with:
+          tag: ${{ .inputs.tag }}
 
-  - name: dry-run
-    description: Render and validate Helm and Zarf packages without a cluster
+  - name: build-all
+    description: Build uds-labs and VM image server containers (no qcow2 needed for VM images — uses existing base layer)
     actions:
-      - description: Run packaging contracts and Helm lint
-        cmd: |
-          # shellcheck shell=bash
-          set -euo pipefail
-          GOCACHE=/tmp/uds-labs-go-cache go test . -run 'TestHelmChart|TestVMImage|TestDevelopmentBundle|TestLocalE2E|TestApplicationImage'
-          helm lint chart
-          helm lint packages/vm-images/chart
-          helm template uds-labs chart \
-            --namespace uds-labs \
-            --set domain=example.test \
-            --set provider=kubevirt \
-            >/dev/null
-          uds inspect bundle/local/uds-bundle.yaml --no-progress --no-color >/dev/null
-      - description: Lint and render Zarf package definitions
-        cmd: |
-          # shellcheck shell=bash
-          set -euo pipefail
-          uds zarf dev lint .
-          uds zarf dev inspect manifests . \
-            --deploy-set-variables DOMAIN=example.test \
-            --deploy-set-variables PROVIDER=kubevirt \
-            >/dev/null
+      - task: images:build-all
+
+  - name: build-image
+    description: Build the uds-labs Docker image tagged for ghcr.io
+    actions:
+      - task: images:build-image
+
+  - name: push-all
+    description: Push uds-labs and VM image server containers to ghcr.io
+    actions:
+      - task: images:push-all
+
+  - name: push-image
+    description: Push the uds-labs Docker image to ghcr.io
+    actions:
+      - task: images:push-image
+
+  - name: build-lab-package
+    description: Build the uds-labs Zarf package (lab server, operator, CRD, RBAC)
+    actions:
+      - task: images:build-lab-package
+
+  - name: build-vm-images-package
+    description: Build a local VM-image package or stage the published version consumed by the UDS bundle
+    inputs:
+      local:
+        description: Build from local image archives (1) or pull the published package (0)
+        default: "1"
+      repository:
+        description: OCI repository containing published VM-image packages
+        default: ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images
+    actions:
+      - task: images:build-vm-images-package
+        with:
+          local: ${{ .inputs.local }}
+          repository: ${{ .inputs.repository }}
+
+  - name: build-bundle
+    description: Build the selected UDS bundle profile
+    inputs:
+      profile:
+        description: Bundle profile to build (default or local)
+        default: default
+    actions:
+      - task: images:build-bundle
+        with:
+          profile: ${{ .inputs.profile }}
+
+  - name: deploy-bundle
+    description: Deploy the latest bundle for the selected profile
+    inputs:
+      profile:
+        description: Bundle profile to deploy (default or local)
+        default: default
+      config:
+        description: Path to the ignored, environment-specific default-profile config
+        default: bundle/uds-config.yaml
+    actions:
+      - task: images:deploy-bundle
+        with:
+          profile: ${{ .inputs.profile }}
+          config: ${{ .inputs.config }}
+
+  - name: build-and-push
+    description: Build then push all images to ghcr.io
+    actions:
+      - task: images:build-and-push
 
   - name: wipe-k3s
     description: Uninstall k3s if present
@@ -178,19 +222,10 @@ tasks:
         description: Run this step (1 = run)
         default: "1"
     actions:
-      - description: Uninstall k3s
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
-            echo "Skipping k3s wipe (skip=1)"
-            exit 0
-          fi
-          if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
-            echo "Uninstalling k3s..."
-            sudo /usr/local/bin/k3s-uninstall.sh
-            sleep 3
-          else
-            echo "k3s not installed — nothing to wipe"
-          fi
+      - task: cluster:wipe-k3s
+        with:
+          skip: ${{ .inputs.skip }}
+          run: ${{ .inputs.run }}
 
   - name: install-k3s
     description: Install k3s with traefik and servicelb disabled
@@ -202,42 +237,10 @@ tasks:
         description: Run this step (1 = run)
         default: "1"
     actions:
-      - description: Install k3s and copy kubeconfig
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
-            echo "Skipping k3s install (skip=1)"
-            exit 0
-          fi
-          # --disable=traefik  -> avoids gateway-api CRD conflict with UDS Core
-          # --disable=servicelb -> replaced by MetalLB for separate admin+tenant IPs
-          # Download and verify the binary first. The installer otherwise fetches
-          # the checksum without retries, making transient GitHub failures fatal.
-          K3S_VERSION=v1.36.2+k3s1
-          K3S_RELEASE_VERSION=$(printf '%s' "$K3S_VERSION" | sed 's/+/%2B/g')
-          K3S_TMP=$(mktemp -d)
-          trap 'rm -rf "$K3S_TMP"' EXIT
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-            "https://github.com/k3s-io/k3s/releases/download/${K3S_RELEASE_VERSION}/k3s" \
-            -o "$K3S_TMP/k3s"
-          printf '%s  %s\n' \
-            65a55ec56c24eab44383086166ec620a491952b7e23941a49ddca6e8a4c4b4de \
-            "$K3S_TMP/k3s" | sha256sum --check --status
-          sudo install -m 0755 "$K3S_TMP/k3s" /usr/local/bin/k3s
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-            https://get.k3s.io -o "$K3S_TMP/install.sh"
-          INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION="$K3S_VERSION" \
-            sh "$K3S_TMP/install.sh" --disable=traefik --disable=servicelb
-          mkdir -p "$HOME/.kube"
-          sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
-          sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
-        maxTotalSeconds: 300
-      - description: Wait for k3s node Ready
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
-          until kubectl get nodes >/dev/null 2>&1; do sleep 2; done
-          kubectl wait node --all --for=condition=Ready --timeout=120s
-          kubectl get nodes
-        maxTotalSeconds: 130
+      - task: cluster:install-k3s
+        with:
+          skip: ${{ .inputs.skip }}
+          run: ${{ .inputs.run }}
 
   - name: install-metallb
     description: Install MetalLB and configure IP pool (auto-detects host subnet)
@@ -255,48 +258,12 @@ tasks:
         description: "Override MetalLB IP range (auto-detected from host IP if empty)"
         default: ""
     actions:
-      - description: Apply MetalLB manifests
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
-            echo "Skipping MetalLB install (skip=1)"
-            exit 0
-          fi
-          kubectl apply -f "https://raw.githubusercontent.com/metallb/metallb/${{ .inputs.version }}/config/manifests/metallb-native.yaml"
-        maxTotalSeconds: 120
-      - description: Wait for MetalLB controller
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
-          kubectl wait -n metallb-system deployment/controller --for=condition=Available --timeout=120s
-          kubectl rollout status daemonset/speaker -n metallb-system --timeout=60s || true
-        maxTotalSeconds: 130
-      - description: Configure MetalLB IP pool
-        cmd: |
-          # shellcheck shell=bash
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then exit 0; fi
-          RANGE="${{ .inputs.range }}"
-          if [ -z "$RANGE" ]; then
-            LOCAL_IP=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[^ ]+' || true)
-            [ -n "$LOCAL_IP" ] || { echo "ERROR: cannot detect local IP — set range input: --with range=x.x.x.a-x.x.x.b"; exit 1; }
-            SUBNET=$(echo "$LOCAL_IP" | cut -d. -f1-3)
-            RANGE="${SUBNET}.200-${SUBNET}.250"
-          fi
-          echo "MetalLB pool: $RANGE"
-          printf '%s\n' \
-            'apiVersion: metallb.io/v1beta1' \
-            'kind: IPAddressPool' \
-            'metadata:' \
-            '  name: local-pool' \
-            '  namespace: metallb-system' \
-            'spec:' \
-            '  addresses:' \
-            "  - ${RANGE}" \
-            '---' \
-            'apiVersion: metallb.io/v1beta1' \
-            'kind: L2Advertisement' \
-            'metadata:' \
-            '  name: local-adv' \
-            '  namespace: metallb-system' \
-            | kubectl apply -f -
+      - task: cluster:install-metallb
+        with:
+          skip: ${{ .inputs.skip }}
+          run: ${{ .inputs.run }}
+          version: ${{ .inputs.version }}
+          range: ${{ .inputs.range }}
 
   - name: zarf-init
     description: Initialize Zarf in the cluster
@@ -308,320 +275,15 @@ tasks:
         description: Run this step (1 = run)
         default: "1"
     actions:
-      - description: Run zarf init
-        cmd: |
-          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.run }}" != "1" ]; then
-            echo "Skipping zarf init (skip=1)"
-            exit 0
-          fi
-          ZARF_INIT_LOG=$(mktemp)
-          trap 'rm -f "$ZARF_INIT_LOG"' EXIT
-          ZARF_INIT_ATTEMPT=1
-          while [ "$ZARF_INIT_ATTEMPT" -le 3 ]; do
-            : > "$ZARF_INIT_LOG"
-            if zarf init --confirm > "$ZARF_INIT_LOG" 2>&1; then
-              cat "$ZARF_INIT_LOG"
-              break
-            fi
-            cat "$ZARF_INIT_LOG"
-            if grep -q 'requires a zarf-init package, but one was not found' "$ZARF_INIT_LOG"; then
-              ZARF_VERSION=$(zarf version 2>/dev/null | head -1)
-              INIT_PKG="oci://ghcr.io/zarf-dev/packages/init:${ZARF_VERSION}"
-              echo "Zarf init package missing locally — initializing from ${INIT_PKG}..." >&2
-              zarf init "$INIT_PKG" --confirm
-              break
-            fi
-            if ! grep -q 'failed to delete injector resources: configmaps "zarf-payload-' "$ZARF_INIT_LOG"; then
-              exit 1
-            fi
-            if [ "$ZARF_INIT_ATTEMPT" -eq 3 ]; then
-              echo "Zarf init failed after 3 injector cleanup retries" >&2
-              exit 1
-            fi
-            echo "Retrying Zarf init after injector ConfigMap cleanup race (attempt $((ZARF_INIT_ATTEMPT + 1))/3)..." >&2
-            kubectl -n zarf delete pod/injector service/zarf-injector configmap/rust-binary --ignore-not-found
-            for resource in $(kubectl -n zarf get configmaps -o name | grep '^configmap/zarf-payload-' || true); do
-              kubectl -n zarf delete "$resource" --ignore-not-found
-            done
-            ZARF_INIT_ATTEMPT=$((ZARF_INIT_ATTEMPT + 1))
-          done
-        maxTotalSeconds: 600
-
-  - name: stage-cdi-package
-    description: Stage the placement-enabled CDI package for bundle creation
-    inputs:
-      package:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
-    actions:
-      - description: Copy CDI package into bundle input directory
-        cmd: |
-          # shellcheck shell=bash
-          set -euo pipefail
-          PACKAGE="${{ .inputs.package }}"
-          [ -f "$PACKAGE" ] || { echo "ERROR: CDI package not found: $PACKAGE" >&2; exit 1; }
-          mkdir -p bundle/cdi
-          find bundle/cdi -maxdepth 1 -type f -name 'zarf-package-cdi-*.tar.zst' -delete
-          cp "$PACKAGE" bundle/cdi/zarf-package-cdi-amd64-dev-upstream.tar.zst
-          echo "Staged $PACKAGE as bundle/cdi/zarf-package-cdi-amd64-dev-upstream.tar.zst"
-        maxTotalSeconds: 1200
-
-  - name: build-vm-images
-    description: |
-      Build VM image server container images from packer qcow2 outputs and
-      export image archives for fast, deterministic Zarf package assembly.
-      Images are tagged for ghcr.io and loaded into the local Docker daemon.
-      Run uds run build-images first to produce the qcow2 files.
-      Push to registry with: uds run push-vm-images
-    inputs:
-      build:
-        description: Build local VM image-server containers (1 = build)
-        default: "1"
-      base_qcow2:
-        description: Path to base qcow2 (combined base+tools image)
-        default: packer/output/base/lab-base.qcow2
-      uds_core_qcow2:
-        description: Path to uds-core qcow2
-        default: packer/output/uds-core/lab-playground-uds-core.qcow2
-      tag:
-        description: Image tag (defaults to package version)
-        default: ""
-    actions:
-      - description: Build OCI container images from qcow2 files
-        maxTotalSeconds: 600
-        cmd: |
-          # shellcheck shell=bash
-          if [ "${{ .inputs.build }}" != "1" ]; then
-            echo "Skipping local VM image container builds"
-            exit 0
-          fi
-          TAG="${{ .inputs.tag }}"
-          if [ -z "$TAG" ]; then
-            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          fi
-          build_image() {
-            local name="$1" dockerfile="$2" context_dir="$3" archive="$4"
-            local image="ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
-            if [ ! -d "$context_dir" ] || ! find "$context_dir" -maxdepth 1 -type f -name '*.qcow2' -print -quit | grep -q .; then
-              echo "SKIP: no qcow2 in $context_dir — skipping $name"
-              return 0
-            fi
-            echo "Building ${image}..."
-            docker build -t "$image" -f "$dockerfile" "$context_dir"
-            echo "Exporting ${image} to ${archive}..."
-            docker save "$image" -o "$archive"
-          }
-          build_image base     packages/vm-images/Dockerfile.base     "$(dirname "${{ .inputs.base_qcow2 }}")"     packages/vm-images/base.tar
-          build_image uds-core packages/vm-images/Dockerfile.uds-core "$(dirname "${{ .inputs.uds_core_qcow2 }}")" packages/vm-images/uds-core.tar
-
-  - name: push-vm-images
-    description: Push VM image server container images to ghcr.io
-    inputs:
-      tag:
-        description: Image tag to push (defaults to package version)
-        default: ""
-    actions:
-      - description: Push VM images to registry
-        maxTotalSeconds: 600
-        cmd: |
-          TAG="${{ .inputs.tag }}"
-          if [ -z "$TAG" ]; then
-            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          fi
-          for name in base uds-core; do
-            echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}..."
-            docker push "ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
-          done
-
-  - name: build-image
-    description: Build the uds-labs Docker image tagged for ghcr.io
-    actions:
-      - description: Build Docker image
-        cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker build -t "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}" .
-        maxTotalSeconds: 600
-
-  - name: push-image
-    description: Push the uds-labs Docker image to ghcr.io
-    actions:
-      - description: Push image to registry
-        cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker push "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
-        maxTotalSeconds: 600
-
-  - name: build-lab-package
-    description: Build the uds-labs Zarf package (lab server, operator, CRD, RBAC)
-    actions:
-      - description: Build Zarf package
-        cmd: |
-          mkdir -p ~/.cache/zarf-tmp
-          zarf package create . --confirm --tmpdir ~/.cache/zarf-tmp
-        maxTotalSeconds: 600
-
-  - name: build-vm-images-package
-    description: Build a local VM-image package or stage the published version consumed by the UDS bundle
-    inputs:
-      local:
-        description: Build from local image archives (1) or pull the published package (0)
-        default: "1"
-      repository:
-        description: OCI repository containing published VM-image packages
-        default: ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images
-    actions:
-      - description: Stage the VM images Zarf package
-        cmd: |
-          set -euo pipefail
-          VERSION=$(grep '^  version:' packages/vm-images/zarf.yaml | head -1 | awk '{print $2}')
-          mkdir -p packages/vm-images
-
-          if [ "${{ .inputs.local }}" != "1" ]; then
-            EXISTING=$(find packages/vm-images -maxdepth 1 -type f -name "zarf-package-uds-labs-vm-images-*-${VERSION}.tar.zst" -print -quit)
-            if [ -n "$EXISTING" ]; then
-              echo "Reusing staged VM-image package $EXISTING"
-              exit 0
-            fi
-            REPOSITORY="${{ .inputs.repository }}"
-            echo "Pulling published VM-image package ${REPOSITORY}:${VERSION}"
-            zarf package pull "oci://${REPOSITORY}:${VERSION}" --output-directory packages/vm-images
-            exit 0
-          fi
-
-          find packages/vm-images -maxdepth 1 -type f -name 'zarf-package-uds-labs-vm-images-*.tar.zst' -delete
-          for archive in packages/vm-images/base.tar packages/vm-images/uds-core.tar; do
-            [ -f "$archive" ] || { echo "ERROR: missing $archive — run 'uds run build-vm-images' first" >&2; exit 1; }
-          done
-          mkdir -p ~/.cache/zarf-tmp
-          zarf package create packages/vm-images --confirm --skip-sbom --tmpdir ~/.cache/zarf-tmp --output packages/vm-images
-        maxTotalSeconds: 3600
-
-  - name: build-bundle
-    description: Build the selected UDS bundle profile
-    inputs:
-      profile:
-        description: Bundle profile to build (default or local)
-        default: default
-    actions:
-      - description: Create UDS bundle
-        cmd: |
-          BUNDLE_TMPDIR="${ZARF_TMPDIR:-$HOME/.cache/zarf-tmp}"
-          mkdir -p "$BUNDLE_TMPDIR"
-          case "${{ .inputs.profile }}" in
-            default) BUNDLE_DIR=bundle ;;
-            local) BUNDLE_DIR=bundle/local ;;
-            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
-          esac
-          uds create "$BUNDLE_DIR" --confirm --tmpdir "$BUNDLE_TMPDIR"
-        # Bundle assembly embeds the large VM image package built above.
-        maxTotalSeconds: 3600
-
-  - name: deploy-bundle
-    description: Deploy the latest bundle for the selected profile
-    inputs:
-      profile:
-        description: Bundle profile to deploy (default or local)
-        default: default
-      config:
-        description: Path to the ignored, environment-specific default-profile config
-        default: bundle/uds-config.yaml
-    actions:
-      - description: Deploy bundle
-        cmd: |
-          case "${{ .inputs.profile }}" in
-            default)
-              BUNDLE_DIR=bundle
-              BUNDLE_NAME=uds-labs
-              ;;
-            local)
-              BUNDLE_DIR=bundle/local
-              BUNDLE_NAME=uds-labs-local
-              ;;
-            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
-          esac
-          BUNDLE=$(find "$BUNDLE_DIR" -maxdepth 1 -type f -name "uds-bundle-${BUNDLE_NAME}-*.tar.zst" -print | sort | tail -1)
-          [ -n "$BUNDLE" ] || { echo "ERROR: no ${BUNDLE_NAME} bundle found in ${BUNDLE_DIR}/ — run build-bundle first"; exit 1; }
-
-          if [ "${{ .inputs.profile }}" = "local" ]; then
-            echo "Deploying local profile: $BUNDLE"
-            uds deploy "$BUNDLE" --confirm
-            exit 0
-          fi
-
-          CONFIG="${{ .inputs.config }}"
-          case "$CONFIG" in /*) ;; *) CONFIG="$(pwd)/$CONFIG" ;; esac
-          [ -f "$CONFIG" ] || { echo "ERROR: missing deployment config: $CONFIG — copy bundle/uds-config.example.yaml and customize it"; exit 1; }
-          echo "Deploying: $BUNDLE with $CONFIG"
-          UDS_CONFIG="$CONFIG" uds deploy "$BUNDLE" --confirm
-        maxTotalSeconds: 3600
+      - task: cluster:zarf-init
+        with:
+          skip: ${{ .inputs.skip }}
+          run: ${{ .inputs.run }}
 
   - name: wait-kubevirt
     description: Wait for KubeVirt to reach Available status
     actions:
-      - description: Wait for KubeVirt Available
-        cmd: kubectl -n kubevirt wait kubevirt kubevirt --for=condition=Available --timeout=300s
-        maxTotalSeconds: 310
-
-  - name: patch-demo-routes
-    description: |
-      Exempt /demo and /api/demo-sessions from Istio authservice and JWT auth.
-      deploy-stack runs this after each bundle deployment. Re-run it after any
-      direct Package CR change because Pepr overwrites the generated policies.
-    inputs:
-      namespace:
-        description: Namespace containing the uds-labs Package CR
-        default: uds-labs
-    actions:
-      - description: Wait for latest UDS Package reconciliation
-        cmd: |
-          NS="${{ .inputs.namespace }}"
-          deadline=$(( $(date +%s) + 120 ))
-          while true; do
-            generation=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)
-            observed=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)
-            ready=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-            if [ -n "$generation" ] && [ "$generation" = "$observed" ] && [ "$ready" = "True" ]; then
-              break
-            fi
-            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for uds-labs Package reconciliation"; exit 1; }
-            sleep 3
-          done
-          echo "uds-labs Package generation $generation reconciled"
-        maxTotalSeconds: 130
-      - description: Wait for authservice AuthorizationPolicy
-        cmd: |
-          NS="${{ .inputs.namespace }}"
-          deadline=$(( $(date +%s) + 120 ))
-          until kubectl get authorizationpolicy uds-labs-authservice -n "$NS" >/dev/null 2>&1; do
-            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for authservice policy"; exit 1; }
-            sleep 3
-          done
-          echo "uds-labs-authservice ready"
-        maxTotalSeconds: 130
-      - description: Wait for jwt-authz AuthorizationPolicy
-        cmd: |
-          NS="${{ .inputs.namespace }}"
-          deadline=$(( $(date +%s) + 120 ))
-          until kubectl get authorizationpolicy uds-labs-jwt-authz -n "$NS" >/dev/null 2>&1; do
-            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for jwt-authz policy"; exit 1; }
-            sleep 3
-          done
-          echo "uds-labs-jwt-authz ready"
-        maxTotalSeconds: 130
-      - description: Patch authservice policy to exclude demo routes
-        maxTotalSeconds: 30
-        cmd: |
-          kubectl patch authorizationpolicy uds-labs-authservice \
-            -n "${{ .inputs.namespace }}" \
-            --type=json \
-            -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
-      - description: Patch jwt-authz policy to exclude demo routes
-        maxTotalSeconds: 30
-        cmd: |
-          kubectl patch authorizationpolicy uds-labs-jwt-authz \
-            -n "${{ .inputs.namespace }}" \
-            --type=json \
-            -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
+      - task: cluster:wait-kubevirt
 
   - name: populate-golden-pvcs
     description: Import pre-built qcow2 images into golden PVCs (auto-skips if qcow2s not found)
@@ -638,68 +300,25 @@ tasks:
       namespace:
         description: Namespace for golden PVCs
         default: uds-labs-vms
+      host_ip:
+        description: Host IP reachable from cluster pods (auto-detected when empty)
+        default: ""
+      port_base:
+        description: Temporary HTTP port for the base image
+        default: "18888"
+      port_uds_core:
+        description: Temporary HTTP port for the UDS Core image
+        default: "18890"
     actions:
-      - description: Import golden PVCs
-        maxTotalSeconds: 600
-        cmd: |
-          # shellcheck shell=bash
-          if [ "${{ .inputs.skip }}" = "1" ]; then
-            echo "Skipping golden PVC import (skip=1)"
-            exit 0
-          fi
-          import_args=()
-          [ -f "${{ .inputs.base_qcow2 }}" ]     && import_args+=("BASE_QCOW2=${{ .inputs.base_qcow2 }}")
-          [ -f "${{ .inputs.uds_core_qcow2 }}" ] && import_args+=("UDS_CORE_QCOW2=${{ .inputs.uds_core_qcow2 }}")
-          if [ ${#import_args[@]} -eq 0 ]; then
-            echo "No qcow2 files found at expected paths — skipping golden PVC import"
-            echo "Build images first:  uds run build-images"
-            echo "VM provisioning will fail until golden PVCs are populated!"
-            exit 0
-          fi
-          env "${import_args[@]}" GOLDEN_NAMESPACE="${{ .inputs.namespace }}" \
-            ./scripts/create-golden-pvc.sh
-
-  - name: verify-cluster
-    description: Print cluster node and workload status summary
-    actions:
-      - description: Cluster status summary
-        cmd: |
-          kubectl get nodes
-          kubectl -n kubevirt get kubevirt kubevirt \
-            -o jsonpath='KubeVirt status: {.status.phase}{"\n"}' || true
-          echo "Non-running pods (if any):"
-          kubectl get pods -A | grep -v Running | grep -v Completed | grep -v NAME || true
-
-  # ── Composite cluster-setup task ─────────────────────────────────────────────
-  # Replaces scripts/dev-cluster-setup.sh. Composes the atomic tasks above.
-  # k3s install requires sudo — run `sudo -v` before starting if your sudo
-  # session has timed out.
-
-  - name: bootstrap-local-cluster
-    description: Local-only bootstrap for k3s, MetalLB, and Zarf init. Bundle deploy remains the canonical test path.
-    inputs:
-      WIPE_CLUSTER:
-        description: Wipe and reinstall k3s (1 = wipe/bootstrap, 0 = skip bootstrap)
-        default: "1"
-      CDI_PACKAGE:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
-    actions:
-      - task: preflight
+      - task: cluster:populate-golden-pvcs
         with:
-          cdi_package: ${{ .inputs.CDI_PACKAGE }}
-      - task: wipe-k3s
-        with:
-          run: ${{ .inputs.WIPE_CLUSTER }}
-      - task: install-k3s
-        with:
-          run: ${{ .inputs.WIPE_CLUSTER }}
-      - task: install-metallb
-        with:
-          run: ${{ .inputs.WIPE_CLUSTER }}
-      - task: zarf-init
-        with:
-          run: ${{ .inputs.WIPE_CLUSTER }}
+          skip: ${{ .inputs.skip }}
+          base_qcow2: ${{ .inputs.base_qcow2 }}
+          uds_core_qcow2: ${{ .inputs.uds_core_qcow2 }}
+          namespace: ${{ .inputs.namespace }}
+          host_ip: ${{ .inputs.host_ip }}
+          port_base: ${{ .inputs.port_base }}
+          port_uds_core: ${{ .inputs.port_uds_core }}
 
   - name: deploy-local-uds-core
     description: Deploy pinned standalone UDS Core packages onto the existing bare-k3s cluster
@@ -714,30 +333,93 @@ tasks:
         description: Pinned standalone UDS Core identity and authorization package
         default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
     actions:
-      - description: Deploy standalone UDS Core packages
-        cmd: |
-          if [ "${{ .inputs.run }}" != "1" ]; then
-            echo "Preserving existing UDS Core installation"
-            exit 0
-          fi
-          uds zarf package deploy "${{ .inputs.base_package }}" \
-            --set-variables DOMAIN=uds.dev \
-            --values bundle/local/core-base-values.yaml \
-            --confirm
-          uds zarf package deploy "${{ .inputs.identity_package }}" \
-            --set-variables DOMAIN=uds.dev \
-            --values bundle/local/core-identity-values.yaml \
-            --confirm
-          kubectl wait --for=condition=Ready package/keycloak -n keycloak --timeout=10m
-          kubectl wait --for=condition=Ready package/authservice -n authservice --timeout=10m
-        maxTotalSeconds: 1800
+      - task: cluster:deploy-local-uds-core
+        with:
+          run: ${{ .inputs.run }}
+          base_package: ${{ .inputs.base_package }}
+          identity_package: ${{ .inputs.identity_package }}
+
+  - name: bootstrap-local-cluster
+    description: Local-only bootstrap for k3s, MetalLB, and Zarf init. Bundle deploy remains the canonical test path.
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe/bootstrap, 0 = skip bootstrap)
+        default: "1"
+    actions:
+      - task: cluster:bootstrap-local-cluster
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+
+  - name: verify-cluster
+    description: Print cluster node and workload status summary
+    actions:
+      - task: cluster:verify-cluster
+
+  - name: patch-demo-routes
+    description: Run access:patch-demo-routes
+    inputs:
+      namespace:
+        description: Namespace containing the uds-labs Package CR
+        default: uds-labs
+      dry_run:
+        description: Print the planned operation without applying policy patches
+        default: "0"
+    actions:
+      - task: access:patch-demo-routes
+        with:
+          namespace: ${{ .inputs.namespace }}
+          dry_run: ${{ .inputs.dry_run }}
+
+  - name: patch-coredns
+    description: Patch CoreDNS to route *.uds.dev to MetalLB gateways
+    actions:
+      - task: access:patch-coredns
+
+  - name: create-test-session
+    description: Create a LabSession for exercising the operator without the browser
+    inputs:
+      namespace:
+        description: Namespace for the LabSession
+        default: uds-labs-vms
+      scenario_id:
+        description: Scenario identifier to launch
+        default: playground-tools
+      client_id:
+        description: Client identifier associated with the session
+        default: testuser
+      ttl_minutes:
+        description: Session lifetime in minutes
+        default: "60"
+      name:
+        description: LabSession name (generated when empty)
+        default: ""
+    actions:
+      - task: access:create-test-session
+        with:
+          namespace: ${{ .inputs.namespace }}
+          scenario_id: ${{ .inputs.scenario_id }}
+          client_id: ${{ .inputs.client_id }}
+          ttl_minutes: ${{ .inputs.ttl_minutes }}
+          name: ${{ .inputs.name }}
+
+  - name: create-test-user
+    description: Create test Keycloak user (doug@uds.dev / unicorn123!@#UN) in /UDS Core/Admin
+    actions:
+      - task: access:create-test-user
+
+  - name: start-proxy
+    description: Start nginx SNI reverse proxy (auto-detects MetalLB IPs)
+    actions:
+      - task: access:start-proxy
+
+  - name: stop-proxy
+    description: Stop nginx SNI reverse proxy
+    actions:
+      - task: access:stop-proxy
 
   - name: deploy-stack
     description: Build and deploy the UDS bundle, then run read-only cluster verification.
     inputs:
-      CDI_PACKAGE:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
         default: "0"
@@ -757,32 +439,14 @@ tasks:
         description: Bundle profile to build and deploy (default or local)
         default: default
     actions:
-      - task: build-images
+      - task: workflow:deploy-stack
         with:
-          build: ${{ .inputs.BUILD_IMAGES }}
-          skip_base: ${{ .inputs.SKIP_BASE }}
-          skip_uds_core: ${{ .inputs.SKIP_UDS_CORE }}
-      - task: stage-cdi-package
-        with:
-          package: ${{ .inputs.CDI_PACKAGE }}
-      - task: build-vm-images
-        with:
-          build: ${{ .inputs.LOCAL_VM_IMAGES }}
-          tag: ${{ .inputs.VM_IMAGE_TAG }}
-      - task: build-image
-      - task: build-lab-package
-      - task: build-vm-images-package
-        with:
-          local: ${{ .inputs.LOCAL_VM_IMAGES }}
-      - task: build-bundle
-        with:
-          profile: ${{ .inputs.BUNDLE_PROFILE }}
-      - task: deploy-bundle
-        with:
-          profile: ${{ .inputs.BUNDLE_PROFILE }}
-      - task: patch-demo-routes
-      - task: wait-kubevirt
-      - task: verify-cluster
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
 
   - name: cluster-up
     description: "Backward-compatible alias: bootstrap local k3s, then deploy the UDS bundle."
@@ -790,9 +454,6 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe/bootstrap)
         default: "1"
-      CDI_PACKAGE:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       BUILD_IMAGES:
         description: Build local packer images (1 = build)
         default: "0"
@@ -809,80 +470,14 @@ tasks:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
     actions:
-      - task: bootstrap-local-cluster
+      - task: workflow:cluster-up
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
-      - task: deploy-stack
-        with:
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
           SKIP_BASE: ${{ .inputs.SKIP_BASE }}
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-
-  # ── CoreDNS patch ─────────────────────────────────────────────────────────────
-
-  - name: patch-coredns
-    description: Patch CoreDNS to route *.uds.dev to MetalLB gateways
-    actions:
-      - description: Patch CoreDNS NodeHosts
-        maxTotalSeconds: 180
-        cmd: ./scripts/patch-coredns.sh
-
-  # ── Keycloak test user ────────────────────────────────────────────────────────
-
-  - name: create-test-user
-    description: Create test Keycloak user (doug@uds.dev / unicorn123!@#UN) in /UDS Core/Admin
-    actions:
-      - task: uds-setup:keycloak-user
-        with:
-          group: "/UDS Core/Admin"
-
-  # ── nginx SNI proxy ───────────────────────────────────────────────────────────
-
-  - name: start-proxy
-    description: Start nginx SNI reverse proxy (auto-detects MetalLB IPs)
-    actions:
-      - description: Generate nginx.conf and start proxy
-        cmd: |
-          export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-          ADMIN_IP=$(kubectl get svc admin-ingressgateway -n istio-admin-gateway \
-            --request-timeout=30s -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-          TENANT_IP=$(kubectl get svc tenant-ingressgateway -n istio-tenant-gateway \
-            --request-timeout=30s -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-          if [ -z "$ADMIN_IP" ] || [ -z "$TENANT_IP" ]; then
-            echo "WARNING: could not detect gateway IPs — run ./scripts/start-proxy.sh manually after cluster is up"
-            exit 0
-          fi
-          echo "Admin: $ADMIN_IP  Tenant: $TENANT_IP"
-          printf '%s\n' \
-            'worker_processes 1;' \
-            'events { worker_connections 1024; }' \
-            'stream {' \
-            "    map \$ssl_preread_server_name \$backend_443 {" \
-            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:443;" \
-            "        default              ${TENANT_IP}:443;" \
-            '    }' \
-            "    map \$ssl_preread_server_name \$backend_80 {" \
-            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:80;" \
-            "        default              ${TENANT_IP}:80;" \
-            '    }' \
-            '    server { listen 443; proxy_pass $backend_443; ssl_preread on; }' \
-            '    server { listen 80; proxy_pass $backend_80; }' \
-            '}' > hack/proxy/nginx.conf
-          docker compose -f hack/proxy/docker-compose.yaml up -d
-
-  - name: stop-proxy
-    description: Stop nginx SNI reverse proxy
-    actions:
-      - description: Stop nginx proxy
-        cmd: docker compose -f hack/proxy/docker-compose.yaml down
-
-  # ── Fast redeploy (no cluster wipe) ──────────────────────────────────────────
-  # Rebuilds and deploys through the UDS bundle.
-  # Use when iterating without wiping the cluster.
 
   - name: redeploy
     description: Rebuild and redeploy through the UDS bundle without rebuilding infra packages
@@ -894,125 +489,15 @@ tasks:
         description: Bundle profile to redeploy
         default: local
     actions:
-      - task: deploy-stack
+      - task: workflow:redeploy
         with:
-          BUILD_IMAGES: "0"
-          LOCAL_VM_IMAGES: "0"
-          VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
+          vm_image_tag: ${{ .inputs.vm_image_tag }}
           BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
-      - task: smoke-test
-
-  # ── Smoke test ───────────────────────────────────────────────────────────────
-  # Run after every deploy to catch broken state before the user hits it.
-  # Exits non-zero on any failure so CI and uds run dev surface problems early.
 
   - name: smoke-test
     description: Verify golden PVCs, platform, authservice, and demo-route authorization
     actions:
-      - description: Check golden PVCs are Succeeded
-        maxTotalSeconds: 1800
-        cmd: |
-          NS="uds-labs-vms"
-          DEADLINE=$(( $(date +%s) + 1500 ))
-          while true; do
-            FAILED=0
-            PENDING=0
-            for pvc in golden-base golden-uds-core; do
-              phase=$(kubectl get datavolume "$pvc" -n "$NS" \
-                -o jsonpath='{.status.phase}' 2>/dev/null || echo "missing")
-              case "$phase" in
-                Succeeded)
-                  echo "  ✔ $pvc ($phase)"
-                  ;;
-                missing)
-                  echo "  ✘ $pvc — DataVolume missing; bundle deployment did not create VM-image resources" >&2
-                  echo "  Check the Deploy bundle output above this smoke test" >&2
-                  kubectl get namespaces >&2 || true
-                  kubectl get pods -A >&2 || true
-                  exit 1
-                  ;;
-                Failed)
-                  echo "  ✘ $pvc — phase: $phase"
-                  kubectl describe datavolume "$pvc" -n "$NS" || true
-                  FAILED=1
-                  ;;
-                *)
-                  echo "  … $pvc — phase: $phase"
-                  PENDING=1
-                  ;;
-              esac
-            done
-            [ "$FAILED" = "0" ] || {
-              echo "CDI import failed; inspect with: kubectl get pods -n cdi" >&2
-              exit 1
-            }
-            [ "$PENDING" = "0" ] && break
-            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
-              echo "Golden PVC imports timed out; inspect with:" >&2
-              echo "  kubectl get datavolumes -n $NS -o yaml" >&2
-              echo "  kubectl get pods -n cdi" >&2
-              echo "  kubectl get events -n $NS --sort-by=.lastTimestamp" >&2
-              exit 1
-            fi
-            sleep 10
-          done
-      - description: Check uds-labs pod is Running
-        maxTotalSeconds: 30
-        cmd: |
-          NS="uds-labs"
-          NOT_RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
-            --field-selector=status.phase!=Running \
-            -o name 2>/dev/null | head -5)
-          RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
-            --field-selector=status.phase=Running \
-            -o name 2>/dev/null | head -1)
-          if [ -n "$RUNNING" ] && [ -z "$NOT_RUNNING" ]; then
-            echo "  ✔ uds-labs pod Running"
-          else
-            echo "  ✘ uds-labs pod not Running"
-            kubectl get pods -n "$NS" -l app=uds-labs 2>/dev/null || true
-            exit 1
-          fi
-      - description: Check authservice is running without OIDC errors
-        maxTotalSeconds: 30
-        cmd: |
-          # JWKS is fetched lazily on first SSO request, not at startup — don't
-          # check for that log line. Instead verify the pod is stable and has no
-          # OIDC configuration errors in recent logs.
-          RESTARTS=$(kubectl get pod -n authservice \
-            -l app.kubernetes.io/name=authservice \
-            -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "unknown")
-          ERRORS=$(kubectl logs -n authservice deployment/authservice --since=120s 2>/dev/null \
-            | grep -i "error.*oidc\|failed.*fetch\|failed.*jwk\|failed.*openid" || true)
-          if [ "$RESTARTS" = "0" ] && [ -z "$ERRORS" ]; then
-            echo "  ✔ authservice running (restarts: 0, no OIDC errors)"
-          elif [ -n "$ERRORS" ]; then
-            echo "  ✘ authservice has OIDC errors — JWT verification will fail"
-            echo "$ERRORS"
-            echo "    Fix DNS for the configured bundle domain, then restart authservice if needed"
-            exit 1
-          else
-            echo "  ⚠ authservice restarts: $RESTARTS — may indicate DNS/Keycloak issue"
-            echo "    Check: kubectl logs -n authservice deploy/authservice"
-          fi
-      - description: Check demo routes bypass authservice and JWT policies
-        maxTotalSeconds: 30
-        cmd: |
-          for policy in uds-labs-authservice uds-labs-jwt-authz; do
-            paths=$(kubectl get authorizationpolicy "$policy" -n uds-labs \
-              -o jsonpath='{.spec.rules[0].to[0].operation.notPaths[*]}' 2>/dev/null || true)
-            for path in "/demo" "/demo/*" "/api/demo-sessions"; do
-              if ! printf '%s\n' "$paths" | tr ' ' '\n' | grep -Fxq "$path"; then
-                echo "ERROR: AuthorizationPolicy/$policy does not exempt $path" >&2
-                echo "Run: uds run patch-demo-routes" >&2
-                exit 1
-              fi
-            done
-          done
-          echo "  ✔ demo routes bypass authservice and JWT policies"
-
-  # ── Full local E2E workflow ───────────────────────────────────────────────────
-  # Bare k3s → UDS Core → KubeVirt/CDI → VM images → UDS Labs → local access.
+      - task: workflow:smoke-test
 
   - name: local-e2e
     description: "Full local E2E on bare k3s, including UDS Core and browser access"
@@ -1020,9 +505,6 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe)
         default: "1"
-      CDI_PACKAGE:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
         default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
@@ -1045,38 +527,16 @@ tasks:
         description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
         default: "0"
     actions:
-      - task: clean-artifacts
-        with:
-          clean: ${{ .inputs.WIPE_CLUSTER }}
-      - task: bootstrap-local-cluster
+      - task: workflow:local-e2e
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
-      - task: deploy-local-uds-core
-        with:
-          run: ${{ .inputs.WIPE_CLUSTER }}
-          base_package: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
-          identity_package: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
-      - task: deploy-stack
-        with:
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
+          UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
+          UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
           SKIP_BASE: ${{ .inputs.SKIP_BASE }}
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          BUNDLE_PROFILE: local
-      - task: patch-coredns
-      - task: start-proxy
-      - task: create-test-user
-      - task: smoke-test
-      - description: Local E2E environment ready
-        cmd: |
-          echo ""
-          echo "UDS Labs local E2E is ready"
-          echo "  UI:       https://labs.uds.dev"
-          echo "  User:     doug@uds.dev"
-          echo "  Password: unicorn123!@#UN"
 
   - name: dev
     description: Backward-compatible alias for local-e2e
@@ -1084,9 +544,6 @@ tasks:
       WIPE_CLUSTER:
         description: Wipe and reinstall k3s (1 = wipe)
         default: "1"
-      CDI_PACKAGE:
-        description: Path to the CDI package artifact
-        default: $HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst
       UDS_CORE_BASE_PACKAGE:
         description: Pinned standalone UDS Core base package
         default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
@@ -1109,10 +566,9 @@ tasks:
         description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
         default: "0"
     actions:
-      - task: local-e2e
+      - task: workflow:dev
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          CDI_PACKAGE: ${{ .inputs.CDI_PACKAGE }}
           UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
           UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
           BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}

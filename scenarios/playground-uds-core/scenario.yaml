@@ -1,9 +1,13 @@
 title: "UDS Core Playground"
 description: "Pre-deployed k3d-core-slim-dev cluster. UDS Core, Keycloak, and Istio are running — dive straight in."
+outcome: "Inspect and experiment with a running UDS Core cluster."
+prerequisites:
+  - "Basic Kubernetes familiarity"
 duration: 60
 difficulty: intermediate
 playground: true
 browser: true
+size: medium
 
 steps:
   - title: "Welcome"

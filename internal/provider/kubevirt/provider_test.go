@@ -31,7 +31,7 @@ func TestGoldenPVCForScenario_BaseFallback(t *testing.T) {
 		ScenariosFS: scenariosFS,
 		GoldenPVCs:  map[string]string{"base": "golden-base"},
 	})
-	got, err := p.goldenPVCForScenario("uds-package-quickstart")
+	got, err := p.goldenPVCForScenario("playground-tools")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestGoldenPVCForScenario_MissingTierReturnsError(t *testing.T) {
 		ScenariosFS: scenariosFS,
 		GoldenPVCs:  map[string]string{},
 	})
-	_, err := p.goldenPVCForScenario("uds-package-quickstart")
+	_, err := p.goldenPVCForScenario("python-to-uds")
 	if err == nil {
 		t.Fatal("expected error for unconfigured tier")
 	}

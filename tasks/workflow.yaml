@@ -1,0 +1,321 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Composite development and end-to-end workflows
+
+---
+
+includes:
+  - quality: quality.yaml
+  - images: images.yaml
+  - cluster: cluster.yaml
+  - access: access.yaml
+
+tasks:
+  - name: deploy-stack
+    description: Build and deploy the UDS bundle, then run read-only cluster verification.
+    inputs:
+      BUILD_IMAGES:
+        description: Build local packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip base image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip UDS Core image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build and embed local VM image-server containers instead of pulling published images
+        default: "0"
+      BUNDLE_PROFILE:
+        description: Bundle profile to build and deploy (default or local)
+        default: default
+    actions:
+      - task: images:build-images
+        with:
+          build: ${{ .inputs.BUILD_IMAGES }}
+          skip_base: ${{ .inputs.SKIP_BASE }}
+          skip_uds_core: ${{ .inputs.SKIP_UDS_CORE }}
+      - task: images:build-vm-images
+        with:
+          build: ${{ .inputs.LOCAL_VM_IMAGES }}
+          tag: ${{ .inputs.VM_IMAGE_TAG }}
+      - task: images:build-image
+      - task: images:build-lab-package
+      - task: images:build-vm-images-package
+        with:
+          local: ${{ .inputs.LOCAL_VM_IMAGES }}
+      - task: images:build-bundle
+        with:
+          profile: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: images:deploy-bundle
+        with:
+          profile: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: access:patch-demo-routes
+      - task: cluster:wait-kubevirt
+      - task: cluster:verify-cluster
+
+  - name: cluster-up
+    description: "Backward-compatible alias: bootstrap local k3s, then deploy the UDS bundle."
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe/bootstrap)
+        default: "1"
+      BUILD_IMAGES:
+        description: Build local packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip base image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip UDS Core image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build and embed local VM image-server containers instead of pulling published images
+        default: "0"
+    actions:
+      - task: cluster:bootstrap-local-cluster
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+      - task: deploy-stack
+        with:
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+
+
+  - name: redeploy
+    description: Rebuild and redeploy through the UDS bundle without rebuilding infra packages
+    inputs:
+      vm_image_tag:
+        description: VM image tag (defaults to package version)
+        default: ""
+      BUNDLE_PROFILE:
+        description: Bundle profile to redeploy
+        default: local
+    actions:
+      - task: deploy-stack
+        with:
+          BUILD_IMAGES: "0"
+          LOCAL_VM_IMAGES: "0"
+          VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
+          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
+      - task: smoke-test
+
+  # ── Smoke test ───────────────────────────────────────────────────────────────
+  # Run after every deploy to catch broken state before the user hits it.
+  # Exits non-zero on any failure so CI and uds run dev surface problems early.
+
+  - name: smoke-test
+    description: Verify golden PVCs, platform, authservice, and demo-route authorization
+    actions:
+      - description: Check golden PVCs are Succeeded
+        maxTotalSeconds: 1800
+        cmd: |
+          NS="uds-labs-vms"
+          DEADLINE=$(( $(date +%s) + 1500 ))
+          while true; do
+            FAILED=0
+            PENDING=0
+            for pvc in golden-base golden-uds-core; do
+              phase=$(kubectl get datavolume "$pvc" -n "$NS" \
+                -o jsonpath='{.status.phase}' 2>/dev/null || echo "missing")
+              case "$phase" in
+                Succeeded)
+                  echo "  ✔ $pvc ($phase)"
+                  ;;
+                missing)
+                  echo "  ✘ $pvc — DataVolume missing; bundle deployment did not create VM-image resources" >&2
+                  echo "  Check the Deploy bundle output above this smoke test" >&2
+                  kubectl get namespaces >&2 || true
+                  kubectl get pods -A >&2 || true
+                  exit 1
+                  ;;
+                Failed)
+                  echo "  ✘ $pvc — phase: $phase"
+                  kubectl describe datavolume "$pvc" -n "$NS" || true
+                  FAILED=1
+                  ;;
+                *)
+                  echo "  … $pvc — phase: $phase"
+                  PENDING=1
+                  ;;
+              esac
+            done
+            [ "$FAILED" = "0" ] || {
+              echo "CDI import failed; inspect with: kubectl get pods -n cdi" >&2
+              exit 1
+            }
+            [ "$PENDING" = "0" ] && break
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+              echo "Golden PVC imports timed out; inspect with:" >&2
+              echo "  kubectl get datavolumes -n $NS -o yaml" >&2
+              echo "  kubectl get pods -n cdi" >&2
+              echo "  kubectl get events -n $NS --sort-by=.lastTimestamp" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+      - description: Check uds-labs pod is Running
+        maxTotalSeconds: 30
+        cmd: |
+          NS="uds-labs"
+          NOT_RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
+            --field-selector=status.phase!=Running \
+            -o name 2>/dev/null | head -5)
+          RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
+            --field-selector=status.phase=Running \
+            -o name 2>/dev/null | head -1)
+          if [ -n "$RUNNING" ] && [ -z "$NOT_RUNNING" ]; then
+            echo "  ✔ uds-labs pod Running"
+          else
+            echo "  ✘ uds-labs pod not Running"
+            kubectl get pods -n "$NS" -l app=uds-labs 2>/dev/null || true
+            exit 1
+          fi
+      - description: Check authservice is running without OIDC errors
+        maxTotalSeconds: 30
+        cmd: |
+          # JWKS is fetched lazily on first SSO request, not at startup — don't
+          # check for that log line. Instead verify the pod is stable and has no
+          # OIDC configuration errors in recent logs.
+          RESTARTS=$(kubectl get pod -n authservice \
+            -l app.kubernetes.io/name=authservice \
+            -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "unknown")
+          ERRORS=$(kubectl logs -n authservice deployment/authservice --since=120s 2>/dev/null \
+            | grep -i "error.*oidc\|failed.*fetch\|failed.*jwk\|failed.*openid" || true)
+          if [ "$RESTARTS" = "0" ] && [ -z "$ERRORS" ]; then
+            echo "  ✔ authservice running (restarts: 0, no OIDC errors)"
+          elif [ -n "$ERRORS" ]; then
+            echo "  ✘ authservice has OIDC errors — JWT verification will fail"
+            echo "$ERRORS"
+            echo "    Fix DNS for the configured bundle domain, then restart authservice if needed"
+            exit 1
+          else
+            echo "  ⚠ authservice restarts: $RESTARTS — may indicate DNS/Keycloak issue"
+            echo "    Check: kubectl logs -n authservice deploy/authservice"
+          fi
+      - description: Check demo routes bypass authservice and JWT policies
+        maxTotalSeconds: 30
+        cmd: |
+          for policy in uds-labs-authservice uds-labs-jwt-authz; do
+            paths=$(kubectl get authorizationpolicy "$policy" -n uds-labs \
+              -o jsonpath='{.spec.rules[0].to[0].operation.notPaths[*]}' 2>/dev/null || true)
+            for path in "/demo" "/demo/*" "/api/demo-sessions"; do
+              if ! printf '%s\n' "$paths" | tr ' ' '\n' | grep -Fxq "$path"; then
+                echo "ERROR: AuthorizationPolicy/$policy does not exempt $path" >&2
+                echo "Run: uds run patch-demo-routes" >&2
+                exit 1
+              fi
+            done
+          done
+          echo "  ✔ demo routes bypass authservice and JWT policies"
+
+  # ── Full local E2E workflow ───────────────────────────────────────────────────
+  # Bare k3s → UDS Core → KubeVirt/CDI → VM images → UDS Labs → local access.
+
+  - name: local-e2e
+    description: "Full local E2E on bare k3s, including UDS Core and browser access"
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe)
+        default: "1"
+      UDS_CORE_BASE_PACKAGE:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      UDS_CORE_IDENTITY_PACKAGE:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+      BUILD_IMAGES:
+        description: Build local Packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip the base Packer image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip the UDS Core Packer image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
+        default: "0"
+    actions:
+      - task: quality:clean-artifacts
+        with:
+          clean: ${{ .inputs.WIPE_CLUSTER }}
+      - task: cluster:bootstrap-local-cluster
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+      - task: cluster:deploy-local-uds-core
+        with:
+          run: ${{ .inputs.WIPE_CLUSTER }}
+          base_package: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
+          identity_package: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
+      - task: deploy-stack
+        with:
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_PROFILE: local
+      - task: access:patch-coredns
+      - task: access:start-proxy
+      - task: access:create-test-user
+      - task: smoke-test
+      - description: Local E2E environment ready
+        cmd: |
+          echo ""
+          echo "UDS Labs local E2E is ready"
+          echo "  UI:       https://labs.uds.dev"
+          echo "  User:     doug@uds.dev"
+          echo "  Password: unicorn123!@#UN"
+
+  - name: dev
+    description: Backward-compatible alias for local-e2e
+    inputs:
+      WIPE_CLUSTER:
+        description: Wipe and reinstall k3s (1 = wipe)
+        default: "1"
+      UDS_CORE_BASE_PACKAGE:
+        description: Pinned standalone UDS Core base package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
+      UDS_CORE_IDENTITY_PACKAGE:
+        description: Pinned standalone UDS Core identity and authorization package
+        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
+      BUILD_IMAGES:
+        description: Build local Packer images (1 = build)
+        default: "0"
+      SKIP_BASE:
+        description: Skip the base Packer image build
+        default: "0"
+      SKIP_UDS_CORE:
+        description: Skip the UDS Core Packer image build
+        default: "0"
+      VM_IMAGE_TAG:
+        description: VM image tag (defaults to package version)
+        default: ""
+      LOCAL_VM_IMAGES:
+        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
+        default: "0"
+    actions:
+      - task: local-e2e
+        with:
+          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
+          UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
+          UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
+          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
+          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
+          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
+          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
+          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
