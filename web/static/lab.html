@@ -237,10 +237,23 @@
       }, 4000);
     }
 
-    // ── Click-to-run: inject into tmux main session via VM injection server ─
+    // ── Click-to-run: inject shell commands into the VM terminal ────────────
+    // Only explicitly shell-labeled fences are runnable. YAML/config and
+    // other examples remain display-only, even though they render as code.
+    function isRunnableCodeBlock(pre) {
+      const code = pre.querySelector('code');
+      const languageClass = [...(code?.classList || [])]
+        .find(name => name.startsWith('language-'));
+      if (!languageClass) return false;
+      const language = languageClass.slice('language-'.length).toLowerCase();
+      return ['bash', 'sh', 'shell', 'zsh'].includes(language);
+    }
+
     function bindCodeBlocks() {
       document.querySelectorAll('#instructions-body pre').forEach(pre => {
-        pre.onclick = () => {
+        const runnable = isRunnableCodeBlock(pre);
+        pre.classList.toggle('runnable', runnable);
+        pre.onclick = runnable ? () => {
           if (!labReady) return;
           pre.classList.add('running');
           setTimeout(() => pre.classList.remove('running'), 600);
@@ -254,7 +267,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: code }),
           }).catch(() => {});
-        };
+        } : null;
       });
     }
 

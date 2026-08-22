@@ -4,13 +4,13 @@ Helm is the standard packaging format for Kubernetes applications and the mechan
 
 Start by moving into the working directory:
 
-```
+```bash
 cd /root/myapp
 ```
 
 ## Chart.yaml
 
-```
+```bash
 cat > chart/Chart.yaml << 'EOF'
 apiVersion: v2
 name: myapp
@@ -23,7 +23,7 @@ EOF
 
 ## Deployment
 
-```
+```bash
 cat > chart/templates/deployment.yaml << 'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -60,7 +60,7 @@ The `readinessProbe` tells Kubernetes not to route traffic to the pod until `/he
 
 ## Service
 
-```
+```bash
 cat > chart/templates/service.yaml << 'EOF'
 apiVersion: v1
 kind: Service
@@ -80,7 +80,7 @@ The Service is a ClusterIP — it's only reachable inside the cluster. The UDS P
 
 ## Render and check
 
-```
+```bash
 uds zarf tools helm template test chart/
 ```
 
@@ -88,6 +88,6 @@ You should see a Deployment and Service rendered to YAML with no errors.
 
 ## Verify
 
-```
+```bash
 uds zarf tools helm template test /root/myapp/chart/ 2>/dev/null | grep "kind:" | sort
 ```

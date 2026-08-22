@@ -39,7 +39,7 @@ archive, so later package builds fail or package the wrong image references.
 References:
 
 - `packages/vm-images/zarf.yaml:8,41-44`
-- `tasks.yaml:269-282`
+- `tasks/images.yaml` (`build-vm-images`)
 - `.github/workflows/bump-version.yaml:91-92`
 - [Zarf image archives](https://docs.zarf.dev/v0-74/ref/components/)
 
@@ -53,8 +53,8 @@ air-gapped behavior whenever local qcow2 files are present.
 
 References:
 
-- `tasks.yaml:527,535-537`
-- `scripts/create-golden-pvc.sh:143-159`
+- `tasks/workflow.yaml` (`cluster-up`)
+- `tasks/cluster.yaml` (`populate-golden-pvcs` DataVolume import)
 
 ### Resolved: skip-image and redeploy paths required image artifacts
 
@@ -79,9 +79,9 @@ opening "packages/vm-images/base.tar": no such file or directory
 
 References:
 
-- `tasks.yaml:272-288`
-- `tasks.yaml:527`
-- `tasks.yaml:726-737`
+- `tasks/images.yaml` (`build-vm-images-package`)
+- `tasks/cluster.yaml` (`populate-golden-pvcs`)
+- `tasks/workflow.yaml` (`deploy-stack` and `redeploy`)
 - `README.md:66-75`
 
 ### High: unpinned executable downloads in the base image

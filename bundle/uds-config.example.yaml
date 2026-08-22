@@ -19,7 +19,9 @@ variables:
     INFRA_NODE_PLACEMENT: *defaultPlacement
     WORKLOAD_NODE_PLACEMENT: *defaultPlacement
     EXPOSE_UPLOAD_PROXY: false
-    ALLOW_IMPORTER_EGRESS: false
+    ALLOW_IMPORTER_EGRESS: true
+    WORKLOAD_NAMESPACES:
+      - uds-labs-vms
 
   uds-labs:
     PROVIDER: kubevirt

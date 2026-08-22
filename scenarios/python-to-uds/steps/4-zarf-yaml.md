@@ -2,7 +2,7 @@
 
 `zarf.yaml` defines the **Zarf package** — the unit of build, ship, and deploy. A Zarf package for a single app is intentionally minimal: it lists the Helm chart to install and the container image to bundle. Nothing more.
 
-```
+```bash
 cat > /root/myapp/zarf.yaml << 'EOF'
 kind: ZarfPackageConfig
 metadata:
@@ -43,7 +43,7 @@ A Zarf package contains exactly one application and its direct Helm chart depend
 
 ## Verify
 
-```
+```bash
 grep -q "ZarfPackageConfig" /root/myapp/zarf.yaml && \
 grep -q "myapp:dev" /root/myapp/zarf.yaml && \
 echo "zarf.yaml looks good"

@@ -1,0 +1,14 @@
+sections:
+  - id: scenarios
+    title: Scenarios
+    description: Guided, hands-on labs with a defined outcome.
+    items:
+      - scenario: uds-reference-package
+      - scenario: python-to-uds
+
+  - id: playgrounds
+    title: Playgrounds
+    description: Open environments for experimenting without a required completion path.
+    items:
+      - scenario: playground-tools
+      - scenario: playground-uds-core

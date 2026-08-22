@@ -3,6 +3,7 @@ package labplatform_test
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -87,6 +88,37 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return contents
+}
+
+func allTaskContents(t *testing.T) string {
+	t.Helper()
+	paths, err := filepath.Glob("tasks/*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths = append([]string{"tasks.yaml"}, paths...)
+	var contents strings.Builder
+	for _, path := range paths {
+		contents.Write(mustReadFile(t, path))
+	}
+	return contents.String()
+}
+
+func taskDefinitions(t *testing.T) map[string]*taskDefinition {
+	t.Helper()
+	paths, err := filepath.Glob("tasks/*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions := map[string]*taskDefinition{}
+	for _, path := range paths {
+		var config taskConfig
+		readYAML(t, path, &config)
+		for i := range config.Tasks {
+			definitions[config.Tasks[i].Name] = &config.Tasks[i]
+		}
+	}
+	return definitions
 }
 
 func TestLabSessionAPIGroupIsConsistent(t *testing.T) {
@@ -303,8 +335,8 @@ func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	}
 
 	for _, requiredPackage := range []string{
-		"name: kubevirt\n    repository: ghcr.io/uds-packages/kubevirt\n    ref: v1.8.4-uds.2-upstream",
-		"name: cdi\n    path: cdi\n    ref: dev-upstream",
+		"name: kubevirt\n    repository: ghcr.io/uds-packages/kubevirt\n    ref: v1.9.0-uds.0-upstream",
+		"name: cdi\n    repository: ghcr.io/uds-packages/cdi\n    ref: 1.65.0-uds.5-upstream",
 	} {
 		if !strings.Contains(bundle, requiredPackage) {
 			t.Fatalf("development bundle is missing package reference %q", requiredPackage)
@@ -337,7 +369,7 @@ func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 		t.Fatal("portable deployment config example must not prescribe an environment-specific node pool")
 	}
 
-	tasks := string(mustReadFile(t, "tasks.yaml"))
+	tasks := allTaskContents(t)
 	for _, required := range []string{
 		"Reusing staged VM-image package",
 		`zarf package pull "oci://${REPOSITORY}:${VERSION}"`,
@@ -374,7 +406,7 @@ func TestLocalE2EProfileUsesK3sDefaults(t *testing.T) {
 		}
 	}
 
-	tasks := string(mustReadFile(t, "tasks.yaml"))
+	tasks := allTaskContents(t)
 	for _, required := range []string{
 		"name: deploy-local-uds-core",
 		"ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream",
@@ -384,9 +416,9 @@ func TestLocalE2EProfileUsesK3sDefaults(t *testing.T) {
 		"bundle/local/core-identity-values.yaml",
 		"name: local-e2e",
 		"BUNDLE_PROFILE: local",
-		"task: patch-coredns",
-		"task: start-proxy",
-		"task: create-test-user",
+		"task: access:patch-coredns",
+		"task: access:start-proxy",
+		"task: access:create-test-user",
 	} {
 		if !strings.Contains(tasks, required) {
 			t.Errorf("local E2E tasks are missing %q", required)
@@ -411,16 +443,10 @@ func TestLocalE2EProfileUsesK3sDefaults(t *testing.T) {
 }
 
 func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *testing.T) {
-	var config taskConfig
-	readYAML(t, "tasks.yaml", &config)
-
-	definitions := map[string]*taskDefinition{}
-	for i := range config.Tasks {
-		definitions[config.Tasks[i].Name] = &config.Tasks[i]
-	}
+	definitions := taskDefinitions(t)
 	for _, required := range []string{"local-e2e", "deploy-stack", "patch-demo-routes", "smoke-test"} {
 		if definitions[required] == nil {
-			t.Fatalf("tasks.yaml must define %q", required)
+			t.Fatalf("task files must define %q", required)
 		}
 	}
 
@@ -428,7 +454,11 @@ func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *test
 		positions := map[string]int{}
 		for i, action := range task.Actions {
 			if action.Task != "" {
-				positions[action.Task] = i
+				name := action.Task
+				if separator := strings.LastIndex(name, ":"); separator >= 0 {
+					name = name[separator+1:]
+				}
+				positions[name] = i
 			}
 		}
 		return positions
@@ -470,6 +500,22 @@ func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *test
 		if !strings.Contains(smokeCommands.String(), required) {
 			t.Fatalf("smoke-test does not verify demo-route policy fragment %q", required)
 		}
+	}
+}
+
+func TestLintCompatibilityTaskRemainsDirectlyRunnable(t *testing.T) {
+	lint := taskDefinitions(t)["lint"]
+	if lint == nil || len(lint.Actions) != 1 || lint.Actions[0].Cmd != "golangci-lint run ./..." {
+		t.Fatal("root lint compatibility task must run golangci-lint directly for attest:lint")
+	}
+}
+
+func TestUDSTasksDoNotShellOutToRepositoryScripts(t *testing.T) {
+	if _, err := os.Stat("scripts"); !os.IsNotExist(err) {
+		t.Fatalf("root scripts directory must be removed; use tasks/*.yaml instead (err: %v)", err)
+	}
+	if strings.Contains(allTaskContents(t), "scripts/") {
+		t.Fatal("UDS tasks must not invoke shell scripts from the repository scripts directory")
 	}
 }
 

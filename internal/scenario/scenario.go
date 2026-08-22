@@ -21,27 +21,31 @@ type Step struct {
 }
 
 type Scenario struct {
-	ID          string        `yaml:"-"            json:"id"`
-	Title       string        `yaml:"title"        json:"title"`
-	Description string        `yaml:"description"  json:"description"`
-	Duration    int           `yaml:"duration"     json:"duration"`
-	Difficulty  string        `yaml:"difficulty"   json:"difficulty"`
-	Tags        []string      `yaml:"tags"         json:"tags"`
-	Steps       []Step        `yaml:"steps"        json:"steps"`
-	Browser     bool          `yaml:"browser"      json:"browser"`
-	Playground  bool          `yaml:"playground"   json:"playground"`
-	Image       string        `yaml:"image"        json:"image,omitempty"`
-	Size        string        `yaml:"size"         json:"size,omitempty"`
-	Services    []ServiceLink `yaml:"services"     json:"services"`
+	ID            string        `yaml:"-"            json:"id"`
+	Title         string        `yaml:"title"        json:"title"`
+	Description   string        `yaml:"description"   json:"description"`
+	Outcome       string        `yaml:"outcome"       json:"outcome"`
+	Prerequisites []string      `yaml:"prerequisites" json:"prerequisites"`
+	Duration      int           `yaml:"duration"      json:"duration"`
+	Difficulty    string        `yaml:"difficulty"   json:"difficulty"`
+	Tags          []string      `yaml:"tags"         json:"tags"`
+	Steps         []Step        `yaml:"steps"        json:"steps"`
+	Browser       bool          `yaml:"browser"      json:"browser"`
+	Playground    bool          `yaml:"playground"   json:"playground"`
+	Image         string        `yaml:"image"        json:"image,omitempty"`
+	Size          string        `yaml:"size"         json:"size,omitempty"`
+	Services      []ServiceLink `yaml:"services"     json:"services"`
 }
 
 type Summary struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Duration    int    `json:"duration"`
-	Difficulty  string `json:"difficulty"`
-	Playground  bool   `json:"playground"`
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	Outcome       string   `json:"outcome"`
+	Prerequisites []string `json:"prerequisites"`
+	Duration      int      `json:"duration"`
+	Difficulty    string   `json:"difficulty"`
+	Playground    bool     `json:"playground"`
 }
 
 func Load(fsys fs.FS, id string) (*Scenario, error) {
@@ -84,12 +88,14 @@ func ListSummaries(fsys fs.FS) ([]Summary, error) {
 			continue
 		}
 		out = append(out, Summary{
-			ID:          s.ID,
-			Title:       s.Title,
-			Description: s.Description,
-			Duration:    s.Duration,
-			Difficulty:  s.Difficulty,
-			Playground:  s.Playground,
+			ID:            s.ID,
+			Title:         s.Title,
+			Description:   s.Description,
+			Outcome:       s.Outcome,
+			Prerequisites: s.Prerequisites,
+			Duration:      s.Duration,
+			Difficulty:    s.Difficulty,
+			Playground:    s.Playground,
 		})
 	}
 	return out, nil

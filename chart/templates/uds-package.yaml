@@ -14,9 +14,7 @@ spec:
     # The self-service demo mode requires /demo and /api/demo-sessions to be
     # reachable without SSO. The deploy-stack task patches the generated
     # policies after bundle deployment. After direct Package CR changes, run
-    # scripts/patch-demo-routes.sh to restore the notPaths exclusions:
-    #
-    #   ./scripts/patch-demo-routes.sh --wait
+    # `uds run patch-demo-routes` to restore the notPaths exclusions.
     #
     # This is a cluster-level operation that must be performed by a cluster
     # admin until UDS Core adds per-path authservice bypass to the Package spec.

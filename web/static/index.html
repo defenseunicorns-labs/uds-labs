@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>UDS Interactive Labs</title>
+  <title>UDS Labs</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,113 +11,132 @@
     <span class="logo">UDS Labs</span>
   </nav>
 
-  <div id="resume-banner" style="display:none;background:rgba(88,166,255,0.08);border-bottom:1px solid rgba(88,166,255,0.2);padding:12px 24px;display:none;align-items:center;gap:12px;font-size:13px;">
-    <span style="color:var(--text-muted)">You have an active lab session.</span>
-    <a id="resume-link" href="#" style="color:var(--accent);font-weight:600;">Resume Lab →</a>
-    <button onclick="dismissResume()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+  <div id="resume-banner" class="resume-banner" hidden>
+    <span>You have an active lab session.</span>
+    <a id="resume-link" href="#">Resume Lab →</a>
+    <button type="button" onclick="dismissResume()" aria-label="Dismiss active session message">×</button>
   </div>
 
-  <div class="catalog">
-    <h1>Interactive Labs</h1>
-    <p class="subtitle">Hands-on UDS and Zarf exercises in a live browser environment — no installs required.</p>
-    <div class="scenario-grid" id="grid">
-      <div class="loading-text">Loading scenarios…</div>
+  <main class="catalog">
+    <header class="catalog-header">
+      <h1>Interactive Labs</h1>
+      <p>Hands-on UDS and Zarf exercises in a live environment. No local setup required.</p>
+    </header>
+
+    <div id="catalog-sections">
+      <div class="loading-text">Loading labs…</div>
     </div>
-  </div>
+  </main>
 
   <script>
-    function fmtTTL(minutes) {
-      if (minutes < 60) return `${minutes} min`;
-      const h = Math.floor(minutes / 60);
-      const m = minutes % 60;
-      return m === 0 ? `${h}h` : `${h}h ${m}m`;
-    }
-
-    async function load() {
-      const [scenariosRes, configRes] = await Promise.all([
-        fetch('/api/scenarios'),
-        fetch('/api/config'),
-      ]);
-      const scenarios = await scenariosRes.json();
-      const config = await configRes.json();
-      const sessionTTL = config.session_ttl_minutes;
-      const grid = document.getElementById('grid');
-      grid.innerHTML = '';
-
-      if (!scenarios.length) {
-        grid.innerHTML = '<div class="loading-text">No scenarios available.</div>';
-        return;
-      }
-
-      scenarios.forEach(s => {
-        const card = document.createElement('div');
-        card.className = 'scenario-card' + (s.playground ? ' playground-card' : '');
-        card.innerHTML = `
-          <div class="card-header">
-            <h2>${esc(s.title || s.id)}</h2>
-            ${s.playground ? '<span class="tag tag-playground">⬡ Playground</span>' : ''}
-          </div>
-          <p>${esc(s.description || '')}</p>
-          <div class="scenario-meta">
-            ${s.duration ? `<span>⏱ ~${s.duration} min</span>` : ''}
-            <span title="Session time limit">⏳ ${fmtTTL(sessionTTL)}</span>
-            ${s.difficulty ? `<span class="tag">${esc(s.difficulty)}</span>` : ''}
-          </div>
-        `;
-        card.addEventListener('click', (e) => startLab(s.id, e.currentTarget));
-        grid.appendChild(card);
-      });
-    }
-
     let activeSession = null;
+
+    function fmtDuration(minutes) {
+      if (!minutes) return '';
+      if (minutes < 60) return `${minutes} min`;
+      const hours = Math.floor(minutes / 60);
+      const remainder = minutes % 60;
+      return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+    }
+
+    function esc(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function loadCatalog() {
+      const container = document.getElementById('catalog-sections');
+      try {
+        const response = await fetch('/api/catalog');
+        if (!response.ok) throw new Error('Catalog request failed');
+        const catalog = await response.json();
+        container.innerHTML = '';
+
+        catalog.sections.forEach(section => {
+          const labs = section.items.filter(item => item.type === 'scenario');
+          if (!labs.length) return;
+
+          const sectionEl = document.createElement('section');
+          sectionEl.className = 'catalog-section';
+          sectionEl.innerHTML = `
+            <div class="section-heading">
+              <h2>${esc(section.title)}</h2>
+              <p>${esc(section.description)}</p>
+            </div>
+            <div class="scenario-grid"></div>`;
+
+          const grid = sectionEl.querySelector('.scenario-grid');
+          labs.forEach(lab => grid.appendChild(buildCard(lab)));
+          container.appendChild(sectionEl);
+        });
+      } catch {
+        container.innerHTML = '<div class="loading-text">The catalog could not be loaded. Refresh to try again.</div>';
+      }
+    }
+
+    function buildCard(lab) {
+      const card = document.createElement('article');
+      card.className = `scenario-card${lab.playground ? ' playground-card' : ''}`;
+      card.innerHTML = `
+        <div class="card-heading">
+          <h3>${esc(lab.title)}</h3>
+          ${lab.playground ? '<span class="tag tag-playground">Playground</span>' : ''}
+        </div>
+        <p>${esc(lab.description)}</p>
+        <div class="scenario-meta">
+          ${lab.duration ? `<span>${fmtDuration(lab.duration)}</span>` : ''}
+          ${lab.difficulty ? `<span class="tag">${esc(lab.difficulty)}</span>` : ''}
+        </div>
+        <button class="card-action" type="button">${lab.playground ? 'Open playground' : 'Start scenario'} →</button>`;
+      card.querySelector('.card-action').addEventListener('click', button => startLab(lab.id, button.currentTarget));
+      return card;
+    }
 
     async function checkActiveSession() {
       try {
-        const res = await fetch('/api/sessions/me');
-        if (res.ok) {
-          activeSession = await res.json();
-          const banner = document.getElementById('resume-banner');
-          document.getElementById('resume-link').href =
-            `/lab.html?session=${activeSession.id}&scenario=${activeSession.scenario}`;
-          banner.style.display = 'flex';
-        }
+        const response = await fetch('/api/sessions/me');
+        if (!response.ok) return;
+        activeSession = await response.json();
+        document.getElementById('resume-link').href =
+          `/lab.html?session=${activeSession.id}&scenario=${activeSession.scenario}`;
+        document.getElementById('resume-banner').hidden = false;
       } catch {}
     }
 
     function dismissResume() {
-      document.getElementById('resume-banner').style.display = 'none';
+      document.getElementById('resume-banner').hidden = true;
     }
 
-    async function startLab(scenarioId, cardEl) {
-      const h2 = cardEl.querySelector('h2');
-      const orig = h2.textContent;
-      h2.textContent = 'Starting…';
+    async function startLab(scenarioId, button) {
+      const original = button.textContent;
+      button.textContent = 'Starting…';
+      button.disabled = true;
 
       try {
-        const res = await fetch('/api/sessions', {
+        const response = await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scenario: scenarioId }),
         });
-        if (res.status === 409 && activeSession) {
+        if (response.status === 409 && activeSession) {
           window.location.href =
             `/lab.html?session=${activeSession.id}&scenario=${activeSession.scenario}`;
           return;
         }
-        if (!res.ok) throw new Error(await res.text());
-        const session = await res.json();
+        if (!response.ok) throw new Error(await response.text());
+        const session = await response.json();
         window.location.href = `/lab.html?session=${session.id}&scenario=${scenarioId}`;
-      } catch (e) {
-        h2.textContent = orig;
-        alert('Failed to start lab: ' + e.message);
+      } catch (error) {
+        button.textContent = original;
+        button.disabled = false;
+        alert(`Failed to start lab: ${error.message}`);
       }
     }
 
-    function esc(s) {
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    load();
+    loadCatalog();
     checkActiveSession();
   </script>
 </body>

@@ -1,10 +1,14 @@
-title: "UDS Reference Package: The Standard for UDS Packages"
-description: "Explore and deploy the UDS Reference Package — the canonical example of how to structure a UDS package with Zarf, Keycloak SSO, Postgres, Istio, and Pepr policy enforcement."
+title: "Explore UDS Package Structure"
+description: "Explore and deploy the maintained UDS Reference Package to see how Zarf packaging, bundle dependencies, networking, SSO, Postgres, and monitoring fit together."
+outcome: "Explain the boundary between an application package, its deployment bundle, and UDS Core integrations."
+prerequisites:
+  - "Basic Kubernetes and Helm familiarity"
+  - "Basic container image familiarity"
 duration: 45
 difficulty: beginner
 browser: true
 image: uds-core
-size: large
+size: medium
 tags:
   - uds
   - zarf

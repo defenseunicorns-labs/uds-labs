@@ -1,5 +1,9 @@
-title: "Build Your Own UDS Package: Python App to Deployment"
-description: "Author every layer yourself: Helm chart, UDS Package CR, zarf.yaml, bundle, and tasks.yaml. A Python Flask app is pre-containerized and ready to package. Deploy it to a live UDS Core cluster with uds run dev."
+title: "Package a Stateless App for UDS"
+description: "Turn a pre-containerized Python application into a UDS package by adding its Helm chart, UDS Package CR, Zarf definition, bundle, and development tasks."
+outcome: "Build and deploy a stateless application package to a live UDS Core cluster."
+prerequisites:
+  - "A containerized application"
+  - "Basic Kubernetes and Helm familiarity"
 duration: 60
 difficulty: intermediate
 browser: true
