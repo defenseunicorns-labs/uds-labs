@@ -217,7 +217,7 @@ tasks:
         default: "1"
       repository:
         description: OCI repository containing published VM-image packages
-        default: ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images
+        default: ghcr.io/defenseunicorns-labs/uds-labs-vm-images
     actions:
       - description: Stage the VM images Zarf package
         cmd: |

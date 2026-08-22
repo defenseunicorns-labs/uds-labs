@@ -47,7 +47,11 @@ tasks:
   - name: lint
     description: Run linters and static analysis
     actions:
-      - task: quality:lint
+      # The root compatibility task must remain directly executable because
+      # attest:lint invokes `uds run lint`; maru-runner cannot resolve the
+      # namespaced quality:lint task from this root task.
+      - description: Run Go linters and static analysis
+        cmd: golangci-lint run ./...
 
   - name: lint:all
     description: Lint YAML and shell files without repository-wide license enforcement
@@ -174,7 +178,7 @@ tasks:
         default: "1"
       repository:
         description: OCI repository containing published VM-image packages
-        default: ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images
+        default: ghcr.io/defenseunicorns-labs/uds-labs-vm-images
     actions:
       - task: images:build-vm-images-package
         with:

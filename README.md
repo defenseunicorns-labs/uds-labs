@@ -93,7 +93,7 @@ For an operator-only check, create a Session directly with
 
 The default reuses a matching package already staged under `packages/vm-images/`.
 If none exists, it attempts to pull the versioned package from
-`ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images`.
+`ghcr.io/defenseunicorns-labs/uds-labs-vm-images`.
 
 Build both qcow2 images and package them locally:
 
@@ -337,23 +337,7 @@ scenarios/      # lab scenario definitions
   containerized-data-importer/ # External CDI package source and artifacts
 ```
 
-### Release process
-
-Release package creation and publishing are currently manual. The release steps
-remain disabled in GitHub Actions until the required runner and release
-environment are configured.
-
-The versioned VM-image package must be available at
-`ghcr.io/defenseunicorns-labs/packages/uds-labs-vm-images` before a clean
-development cluster can run the default flow. Build it locally with
-`uds run build-images`, wrap the qcow2 files with `uds run build-vm-images`,
-create the package with `uds run build-vm-images-package`, then publish it.
-
-```bash
-# GitHub UI: Actions -> Bump Version -> Run workflow -> select minor/major/patch
-# Or via CLI:
-gh workflow run bump-version.yaml -f bump_type=minor
-```
+### Deployment configuration
 
 The default deployment bundle consumes the published KubeVirt and CDI UDS packages. It uses an
 ignored environment configuration copied from `bundle/uds-config.example.yaml`.

@@ -503,6 +503,13 @@ func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *test
 	}
 }
 
+func TestLintCompatibilityTaskRemainsDirectlyRunnable(t *testing.T) {
+	lint := taskDefinitions(t)["lint"]
+	if lint == nil || len(lint.Actions) != 1 || lint.Actions[0].Cmd != "golangci-lint run ./..." {
+		t.Fatal("root lint compatibility task must run golangci-lint directly for attest:lint")
+	}
+}
+
 func TestUDSTasksDoNotShellOutToRepositoryScripts(t *testing.T) {
 	if _, err := os.Stat("scripts"); !os.IsNotExist(err) {
 		t.Fatalf("root scripts directory must be removed; use tasks/*.yaml instead (err: %v)", err)
