@@ -1,6 +1,6 @@
 # Step 6 – Deploy and verify
 
-```
+```bash
 cd /root/myapp && uds run dev
 ```
 
@@ -14,7 +14,7 @@ This runs the three commands from your `tasks.yaml` in sequence. Watch the outpu
 
 Open a second terminal tab and monitor:
 
-```
+```bash
 watch uds zarf tools kubectl get pods -n myapp
 ```
 
@@ -24,13 +24,13 @@ Wait for the pod to reach `Running` with `1/1` READY. With ambient mesh, `1/1` i
 
 Once the pod is Running, check what Pepr generated from your Package CR:
 
-```
+```bash
 uds zarf tools kubectl get package myapp -n myapp -w
 ```
 
 Hit `Ctrl-C` when Phase reaches `Ready`. Then inspect the generated resources:
 
-```
+```bash
 uds zarf tools kubectl get virtualservice,networkpolicy,authorizationpolicy -n myapp
 ```
 
@@ -43,7 +43,7 @@ Pepr generated all of these from the 30-line `uds-package.yaml` you wrote in ste
 
 ## Package CR status
 
-```
+```bash
 uds zarf tools kubectl get package myapp -n myapp -o jsonpath='{.status.phase}'
 ```
 
@@ -51,7 +51,7 @@ Output: `Ready`
 
 ## List all your artifacts
 
-```
+```bash
 ls /root/myapp/*.tar.zst /root/myapp/uds-bundle-*.tar.zst 2>/dev/null
 ```
 
@@ -61,7 +61,7 @@ The `.tar.zst` files are self-contained deployment artifacts. Either one can be 
 
 The app is behind Keycloak SSO. Before you can reach it in the browser, create the test user:
 
-```
+```bash
 cd /root/myapp && uds run setup:keycloak-user --with group="/UDS Core/Admin"
 ```
 
@@ -83,7 +83,7 @@ Your Flask app has zero authentication code. AuthService handled the full OIDC f
 
 ## Verify
 
-```
+```bash
 export KUBECONFIG=/root/.kube/config
 uds zarf tools kubectl get pods -n myapp --no-headers 2>/dev/null | awk '$3=="Running"' | wc -l
 ```

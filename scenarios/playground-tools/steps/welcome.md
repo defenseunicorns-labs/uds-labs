@@ -19,13 +19,13 @@ This sandbox has everything pre-installed. No setup required — start experimen
 
 Create a k3d cluster:
 
-```
+```bash
 k3d cluster create lab
 ```
 
 Deploy UDS Core:
 
-```
+```bash
 uds deploy k3d-core-slim-dev:latest --confirm
 ```
 

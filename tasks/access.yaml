@@ -1,0 +1,257 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Cluster access, test resources, and local proxy tasks
+
+---
+
+includes:
+  - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
+
+tasks:
+  - name: patch-demo-routes
+    description: |
+      Exempt /demo and /api/demo-sessions from Istio authservice and JWT auth.
+      deploy-stack runs this after each bundle deployment. Re-run it after any
+      direct Package CR change because Pepr overwrites the generated policies.
+    inputs:
+      namespace:
+        description: Namespace containing the uds-labs Package CR
+        default: uds-labs
+      dry_run:
+        description: Print the planned operation without applying policy patches
+        default: "0"
+    actions:
+      - description: Wait for latest UDS Package reconciliation
+        cmd: |
+          NS="${{ .inputs.namespace }}"
+          deadline=$(( $(date +%s) + 120 ))
+          while true; do
+            generation=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)
+            observed=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)
+            ready=$(kubectl get package uds-labs -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [ -n "$generation" ] && [ "$generation" = "$observed" ] && [ "$ready" = "True" ]; then
+              break
+            fi
+            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for uds-labs Package reconciliation"; exit 1; }
+            sleep 3
+          done
+          echo "uds-labs Package generation $generation reconciled"
+        maxTotalSeconds: 130
+      - description: Wait for authservice AuthorizationPolicy
+        cmd: |
+          NS="${{ .inputs.namespace }}"
+          deadline=$(( $(date +%s) + 120 ))
+          until kubectl get authorizationpolicy uds-labs-authservice -n "$NS" >/dev/null 2>&1; do
+            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for authservice policy"; exit 1; }
+            sleep 3
+          done
+          echo "uds-labs-authservice ready"
+        maxTotalSeconds: 130
+      - description: Wait for jwt-authz AuthorizationPolicy
+        cmd: |
+          NS="${{ .inputs.namespace }}"
+          deadline=$(( $(date +%s) + 120 ))
+          until kubectl get authorizationpolicy uds-labs-jwt-authz -n "$NS" >/dev/null 2>&1; do
+            [ "$(date +%s)" -gt "$deadline" ] && { echo "ERROR: timed out waiting for jwt-authz policy"; exit 1; }
+            sleep 3
+          done
+          echo "uds-labs-jwt-authz ready"
+        maxTotalSeconds: 130
+      - description: Stop before applying patches when dry_run=1
+        cmd: |
+          if [ "${{ .inputs.dry_run }}" = "1" ]; then
+            echo "Dry run: would exempt /demo, /demo/*, and /api/demo-sessions from both policies"
+            exit 0
+          fi
+      - description: Patch authservice policy to exclude demo routes
+        maxTotalSeconds: 30
+        cmd: |
+          kubectl patch authorizationpolicy uds-labs-authservice \
+            -n "${{ .inputs.namespace }}" \
+            --type=json \
+            -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
+      - description: Patch jwt-authz policy to exclude demo routes
+        maxTotalSeconds: 30
+        cmd: |
+          kubectl patch authorizationpolicy uds-labs-jwt-authz \
+            -n "${{ .inputs.namespace }}" \
+            --type=json \
+            -p='[{"op":"add","path":"/spec/rules/0/to","value":[{"operation":{"notPaths":["/demo","/demo/*","/api/demo-sessions"]}}]}]'
+
+  - name: patch-coredns
+    description: Patch CoreDNS to route *.uds.dev to MetalLB gateways
+    actions:
+      - description: Patch CoreDNS NodeHosts and restart dependent workloads
+        maxTotalSeconds: 300
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+
+          log() { printf '▶ %s\n' "$*"; }
+          warn() { printf '⚠ %s\n' "$*" >&2; }
+          die() { printf '✗ %s\n' "$*" >&2; exit 1; }
+
+          log "Detecting MetalLB gateway IPs..."
+          ADMIN_IP=$(kubectl get svc -n istio-admin-gateway admin-ingressgateway \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          TENANT_IP=$(kubectl get svc -n istio-tenant-gateway tenant-ingressgateway \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          [ -n "$ADMIN_IP" ] || die "Could not detect admin gateway IP (is UDS Core deployed?)"
+          [ -n "$TENANT_IP" ] || die "Could not detect tenant gateway IP (is UDS Core deployed?)"
+          log "Admin gateway:  $ADMIN_IP"
+          log "Tenant gateway: $TENANT_IP"
+
+          CURRENT=$(kubectl get configmap coredns -n kube-system \
+            -o jsonpath='{.data.NodeHosts}' 2>/dev/null || true)
+          CLEANED=$(printf '%s\n' "$CURRENT" | grep -v '\.uds\.dev' || true)
+          PATCH=$(printf '%s\n%s\n%s\n' \
+            "${ADMIN_IP} keycloak.admin.uds.dev" \
+            "${TENANT_IP} sso.uds.dev" \
+            "${TENANT_IP} labs.uds.dev")
+          NEW_HOSTS="${CLEANED}${CLEANED:+$'\n'}${PATCH}"
+
+          log "Patching CoreDNS NodeHosts..."
+          kubectl patch configmap coredns -n kube-system --type merge \
+            --patch "$(jq -n --arg hosts "$NEW_HOSTS" '{data: {NodeHosts: $hosts}}')"
+          kubectl rollout restart deployment/coredns -n kube-system
+          kubectl rollout status deployment/coredns -n kube-system --timeout=60s
+
+          log "Verifying CoreDNS NodeHosts..."
+          NHOSTS=$(kubectl get configmap coredns -n kube-system \
+            -o jsonpath='{.data.NodeHosts}' 2>/dev/null || true)
+          if [[ "$NHOSTS" == *"$TENANT_IP"* && "$NHOSTS" == *"sso.uds.dev"* ]]; then
+            log "NodeHosts contains sso.uds.dev -> $TENANT_IP"
+          else
+            warn "NodeHosts may be missing uds.dev entries"
+          fi
+          sleep 5
+
+          if kubectl get deployment authservice -n authservice >/dev/null 2>&1; then
+            log "Restarting Authservice to re-fetch Keycloak OIDC config..."
+            kubectl rollout restart deployment/authservice -n authservice
+            kubectl rollout status deployment/authservice -n authservice --timeout=120s
+            sleep 3
+            ERRORS=$(kubectl logs -n authservice deployment/authservice --since=30s 2>/dev/null \
+              | grep -i 'error.*oidc\|failed.*fetch\|failed.*jwk\|failed.*openid' || true)
+            if [ -n "$ERRORS" ]; then
+              warn "Authservice has OIDC errors — JWT verification may fail:"
+              printf '%s\n' "$ERRORS"
+            else
+              log "Authservice started cleanly"
+            fi
+          else
+            warn "Authservice deployment not found — skipping restart"
+          fi
+          log "CoreDNS patched and authservice healthy"
+
+  # ── Test resources ────────────────────────────────────────────────────────────
+
+  - name: create-test-session
+    description: Create a LabSession for exercising the operator without the browser
+    inputs:
+      namespace:
+        description: Namespace for the LabSession
+        default: uds-labs-vms
+      scenario_id:
+        description: Scenario identifier to launch
+        default: playground-tools
+      client_id:
+        description: Client identifier associated with the session
+        default: testuser
+      ttl_minutes:
+        description: Session lifetime in minutes
+        default: "60"
+      name:
+        description: LabSession name (generated when empty)
+        default: ""
+    actions:
+      - description: Apply a LabSession resource
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          NAME="${{ .inputs.name }}"
+          [ -n "$NAME" ] || NAME="test-s$(date -u +%s)"
+          EXPIRES_AT=$(date -u -d "+${{ .inputs.ttl_minutes }} minutes" +%Y-%m-%dT%H:%M:%SZ)
+          cat <<EOF | kubectl apply -f -
+          apiVersion: labs.uds.dev/v1alpha1
+          kind: LabSession
+          metadata:
+            name: ${NAME}
+            namespace: ${{ .inputs.namespace }}
+          spec:
+            sessionID: ${NAME}
+            scenarioID: ${{ .inputs.scenario_id }}
+            clientID: ${{ .inputs.client_id }}
+            expiresAt: "${EXPIRES_AT}"
+            size: small
+          EOF
+
+  - name: create-test-user
+    description: Create test Keycloak user (doug@uds.dev / unicorn123!@#UN) in /UDS Core/Admin
+    actions:
+      - task: uds-setup:keycloak-user
+        with:
+          group: "/UDS Core/Admin"
+
+  # ── nginx SNI proxy ───────────────────────────────────────────────────────────
+
+  - name: start-proxy
+    description: Start nginx SNI reverse proxy (auto-detects MetalLB IPs)
+    actions:
+      - description: Generate nginx.conf and start proxy
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+          ADMIN_IP=$(kubectl get svc admin-ingressgateway -n istio-admin-gateway \
+            --request-timeout=30s -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          TENANT_IP=$(kubectl get svc tenant-ingressgateway -n istio-tenant-gateway \
+            --request-timeout=30s -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          if [ -z "$ADMIN_IP" ] || [ -z "$TENANT_IP" ]; then
+            echo "WARNING: could not detect gateway IPs — run 'uds run start-proxy' after the cluster is up"
+            exit 0
+          fi
+          echo "Admin: $ADMIN_IP  Tenant: $TENANT_IP"
+          mkdir -p hack/proxy
+          cat > hack/proxy/nginx.conf <<EOF
+          worker_processes 1;
+          events { worker_connections 1024; }
+
+          stream {
+              map \$ssl_preread_server_name \$backend_443 {
+                  ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:443;
+                  default              ${TENANT_IP}:443;
+              }
+
+              map \$ssl_preread_server_name \$backend_80 {
+                  ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:80;
+                  default              ${TENANT_IP}:80;
+              }
+
+              server {
+                  listen 443;
+                  proxy_pass \$backend_443;
+                  ssl_preread on;
+              }
+
+              server {
+                  listen 80;
+                  proxy_pass \$backend_80;
+              }
+          }
+          EOF
+          docker compose -f hack/proxy/docker-compose.yaml up -d
+
+  - name: stop-proxy
+    description: Stop nginx SNI reverse proxy
+    actions:
+      - description: Stop nginx proxy
+        cmd: docker compose -f hack/proxy/docker-compose.yaml down

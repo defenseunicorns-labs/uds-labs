@@ -1,10 +1,10 @@
 # Step 3 – The UDS Package CR: network, mesh, and SSO
 
-The `Package` CR is what separates a Helm chart from a *UDS package*. Without it, your app deploys but Pepr doesn't know it exists: no external access, no network policies, no mesh integration, no SSO. Pepr watches for `kind: Package` resources and generates all the Kubernetes and Istio plumbing automatically.
+The `Package` CR is what separates a Helm chart from a *UDS package*. Without it, your app deploys but has no UDS-managed external access, network policies, mesh integration, or SSO. The UDS Operator watches `kind: Package` resources and generates the supporting Kubernetes and Istio resources.
 
 ## Write the CR
 
-```
+```bash
 cat > chart/templates/uds-package.yaml << 'EOF'
 apiVersion: uds.dev/v1alpha1
 kind: Package
@@ -59,7 +59,7 @@ UDS Core uses Istio **ambient mesh** — mTLS and observability are handled at t
 
 ### `network.expose`
 
-Pepr reads this and creates an Istio `VirtualService` that routes HTTPS traffic from outside the cluster to your Service. The fields:
+The UDS Operator reads this and creates an Istio `VirtualService` that routes HTTPS traffic from outside the cluster to your Service. The fields:
 
 | Field | Value | Effect |
 |-------|-------|--------|
@@ -95,7 +95,7 @@ Pepr translates each `allow` entry into a `NetworkPolicy` and an `AuthorizationP
 
 ## Verify
 
-```
+```bash
 grep -q "kind: Package" /root/myapp/chart/templates/uds-package.yaml && \
 grep -q "enableAuthserviceSelector" /root/myapp/chart/templates/uds-package.yaml && \
 grep -q "network" /root/myapp/chart/templates/uds-package.yaml && \

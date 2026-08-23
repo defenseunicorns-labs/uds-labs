@@ -10,7 +10,7 @@ packages:
   # Published upstream UDS package with bootstrap operator placement support.
   - name: kubevirt
     repository: ghcr.io/uds-packages/kubevirt
-    ref: v1.8.4-uds.2-upstream
+    ref: v1.9.0-uds.0-upstream
     overrides:
       kubevirt:
         uds-kubevirt-config:
@@ -43,8 +43,8 @@ packages:
 
   # CDI package with bootstrap placement, scoped networking, and removal-order fixes.
   - name: cdi
-    path: cdi
-    ref: dev-upstream
+    repository: ghcr.io/uds-packages/cdi
+    ref: 1.65.0-uds.5-upstream
     overrides:
       cdi:
         uds-cdi-config:
@@ -63,7 +63,10 @@ packages:
               default: false
             - name: ALLOW_IMPORTER_EGRESS
               path: network.importerEgress.enabled
-              default: false
+              default: true
+            - name: WORKLOAD_NAMESPACES
+              path: workloadNamespaces
+              default: [uds-labs-vms]
 
   - name: uds-labs-vm-images
     path: ../packages/vm-images
@@ -104,7 +107,7 @@ packages:
             - path: storageClass
               value: managed-csi-premium
             - path: maxActiveSessions
-              value: 1
+              value: 4
             - path: auth.allowedGroups
               value: [/UDS Labs/Pilot]
             - path: blockedEgressCIDRs

@@ -30,7 +30,7 @@ This breaks UDS composability in three ways:
 
 ## The right way: `bundle/uds-bundle.yaml`
 
-```
+```bash
 cat bundle/uds-bundle.yaml
 ```
 
@@ -38,9 +38,19 @@ The bundle is the deployment unit that composes packages together. Infrastructur
 
 The reference package itself (`path: ../`) is also listed as a package in the bundle. The bundle wires them together at deploy time via `overrides` — telling the reference package where to find its Postgres credentials, which SSO secret to use, and whether to enable monitoring.
 
+## Inspect the Postgres credential adapter
+
+```bash
+cat chart/templates/postgres-secret.yaml
+```
+
+The application accepts one database connection string, while the Postgres Operator generates separate username and password fields. This chart uses Helm's `lookup` function during rendering to read that generated Secret and assemble the connection string.
+
+That adapter demonstrates a real compatibility problem, but it is not the preferred pattern for every application. Rendering can race the operator because the generated Secret may not exist yet. If an application accepts separate fields, reference the operator-generated Secret directly with `secretKeyRef`. If it only accepts a connection string, use a bounded runtime adapter or init process that waits for the Secret and reports a clear failure.
+
 ## `uds run dev` deploys this bundle
 
-```
+```bash
 cat tasks.yaml | grep -A5 "name: dev"
 ```
 
@@ -50,7 +60,7 @@ The `default` task (not used here) also provisions a fresh k3d cluster — usefu
 
 ## Verify
 
-```
+```bash
 grep -r "postgres-operator" zarf.yaml; echo "exit: $?"
 ```
 

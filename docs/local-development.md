@@ -36,7 +36,7 @@ Chainguard registry. The `upstream` flavor does not use that image source.
 
 ## Discover available tasks
 
-List the 33 tasks maintained in this repository:
+List the repository tasks maintained in this project:
 
 ```bash
 uds run --list
@@ -53,6 +53,11 @@ Validate task syntax without running task commands:
 ```bash
 uds run --dry-run <task>
 ```
+
+Task implementations are grouped under `tasks/quality.yaml`,
+`tasks/images.yaml`, `tasks/cluster.yaml`, `tasks/access.yaml`, and
+`tasks/workflow.yaml`. The root `tasks.yaml` includes those files and keeps the
+unqualified task names as compatibility entrypoints.
 
 Pass task inputs with `--with`:
 
@@ -102,7 +107,7 @@ Open the UI, authenticate, start a Lab, and verify terminal and browser access.
 For an operator-only lifecycle check:
 
 ```bash
-./scripts/create-test-session.sh
+uds run create-test-session
 kubectl get labsession -A -w
 kubectl get vmi -n uds-labs-vms -w
 ```
@@ -224,7 +229,7 @@ uds run smoke-test
 Apply the sample session and watch its resources:
 
 ```bash
-./scripts/create-test-session.sh
+uds run create-test-session
 kubectl get labsession -A -w
 kubectl get vmi -n uds-labs-vms -w
 ```
@@ -294,12 +299,11 @@ requires them.
 
 | Task | What it does | Important inputs or notes |
 |---|---|---|
-| `build-images` | Builds base then UDS Core qcow2 images with Packer | `build=1`, `skip_base=0`, `skip_uds_core=0`; up to two hours |
+| `build-images` | Builds base then UDS Core qcow2 images with Packer | `build=1`, `skip_base=0`, `skip_uds_core=0`, `base_image`; up to two hours |
 | `build-vm-images` | Builds local OCI image servers from qcow2 outputs | `build=1`, `base_qcow2`, `uds_core_qcow2`, `tag` |
 | `push-vm-images` | Pushes base and UDS Core image-server images to GHCR | `tag`; requires registry write access |
 | `build-image` | Builds the versioned uds-labs container image | Version comes from `zarf.yaml` |
 | `push-image` | Pushes the uds-labs image to GHCR | Requires registry write access |
-| `stage-cdi-package` | Stages a prebuilt external CDI package for bundle creation | `package` |
 | `build-lab-package` | Builds the UDS Labs server/operator Zarf package | none |
 | `build-vm-images-package` | Reuses/pulls a versioned VM-image package or builds one locally | `local`, `repository` |
 | `build-bundle` | Creates the selected UDS bundle | `profile=default\|local`; requires dependency packages |
@@ -314,7 +318,7 @@ requires them.
 | `zarf-init` | Initializes Zarf, retrying the known injector cleanup race | `run=1`, `skip=0` |
 | `deploy-local-uds-core` | Deploys standalone UDS Core base and identity packages on bare k3s | `run`, pinned `base_package`, `identity_package` |
 | `wait-kubevirt` | Waits for KubeVirt to report Available | Existing cluster required |
-| `populate-golden-pvcs` | Imports local qcow2 files through temporary HTTP servers | `base_qcow2`, `uds_core_qcow2`, `namespace`, `skip=0` |
+| `populate-golden-pvcs` | Imports local qcow2 files through temporary HTTP servers | `base_qcow2`, `uds_core_qcow2`, `namespace`, `host_ip`, `skip=0` |
 | `cluster-up` | Lower-level k3s plus selected bundle deployment compatibility flow | Does not install UDS Core or configure browser access |
 | `verify-cluster` | Prints node, KubeVirt, and workload status | Read-only |
 
@@ -325,6 +329,7 @@ requires them.
 | `deploy-bundle` | Deploys the newest selected-profile bundle | `profile=default\|local`; run `build-bundle` first |
 | `patch-demo-routes` | Restores unauthenticated demo-route exemptions | Called by `deploy-stack`; rerun after direct Package CR changes |
 | `patch-coredns` | Maps UDS hostnames to MetalLB gateways and restarts authservice | Existing deployed cluster required |
+| `create-test-session` | Creates a LabSession for operator lifecycle checks | `namespace`, `scenario_id`, `client_id`, `ttl_minutes`, `name` |
 | `create-test-user` | Creates the documented Keycloak test user | Calls shared `uds-setup:keycloak-user` |
 | `start-proxy` | Starts the local nginx SNI proxy on ports 80 and 443 | Requires gateway LoadBalancer IPs |
 | `stop-proxy` | Stops the local nginx SNI proxy | Uses Docker Compose |

@@ -17,6 +17,7 @@ bin/
 .tmp-*
 *-witness.json
 *.sarif.json
+upgrade-test/
 witness-key.pem
 witness-pub.pem
 node_modules/

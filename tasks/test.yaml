@@ -1,0 +1,167 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+# yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
+
+# Package-level CI tests intentionally use the pod provider. The standard
+# callable-test workflow runs on k3d, where KubeVirt and its golden PVCs are
+# unavailable. The production KubeVirt path remains covered by local-e2e.
+
+includes:
+  - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/create.yaml
+  - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/deploy.yaml
+  - images: ./images.yaml
+  - setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/setup.yaml
+
+tasks:
+  - name: all
+    description: Verify the UDS Labs package and generated UDS resources
+    actions:
+      - task: health-check
+      - task: package-ready
+
+  - name: health-check
+    description: Verify the UDS Labs server and operator are available
+    actions:
+      - description: UDS Labs server is available
+        maxTotalSeconds: 300
+        wait:
+          cluster:
+            kind: Deployment
+            name: uds-labs
+            namespace: uds-labs
+            condition: Available
+      - description: UDS Labs operator is available
+        maxTotalSeconds: 300
+        wait:
+          cluster:
+            kind: Deployment
+            name: lab-operator
+            namespace: uds-labs
+            condition: Available
+
+  - name: package-ready
+    description: Verify the UDS Package reconciles successfully
+    actions:
+      - description: UDS Labs Package is Ready
+        maxTotalSeconds: 300
+        wait:
+          cluster:
+            kind: Packages
+            name: uds-labs
+            namespace: uds-labs
+            condition: "'{.status.phase}'=Ready"
+
+  - name: default
+    description: Create and test the package on a fresh k3d cluster
+    actions:
+      - task: create-dev-package
+      - task: setup:k3d-test-cluster
+      - task: create-deploy-test-package
+
+  - name: create-dev-package
+    description: Build the current application image and create the test package
+    actions:
+      - task: images:build-image
+      - task: create:package
+        with:
+          options: "--skip-sbom"
+
+  - name: deploy-test-package
+    description: Deploy the package with the k3d-compatible pod provider
+    actions:
+      - task: deploy:package
+        with:
+          options: "--set PROVIDER=pod"
+
+  - name: create-deploy-test-package
+    description: Deploy the package and run package-level health checks
+    actions:
+      - task: deploy-test-package
+      - task: all
+
+  - name: dev
+    description: Rebuild and deploy the package against an existing cluster
+    actions:
+      - task: create-dev-package
+      - task: deploy-test-package
+
+  # CI invokes these names through uds-common's callable-test workflow.
+  - name: test-install
+    description: Test installing the current branch on a new k3d cluster
+    actions:
+      - task: create-dev-package
+      - task: setup:k3d-test-cluster
+      - task: create-deploy-test-package
+
+  - name: test-upgrade
+    description: Test upgrading the latest published package to the current branch
+    actions:
+      - task: pull-latest-package
+      - task: setup:k3d-test-cluster
+      - task: deploy-previous-package
+      - task: create-dev-package
+      - task: create-deploy-test-package
+
+  - name: pull-latest-package
+    description: Pull the latest published upstream package for the upgrade test
+    actions:
+      - description: Pull the latest upstream package
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+
+          ARCH="${UDS_ARCH:-amd64}"
+          PACKAGE_NAME="$(./zarf tools yq '.metadata.name' zarf.yaml)"
+          BASE_REPO="${{ .variables.BASE_REPO }}"
+          BASE_REPO="${BASE_REPO:-ghcr.io/defenseunicorns-labs}"
+          REPOSITORY="${BASE_REPO}/uds/${PACKAGE_NAME}"
+          FLAVOR="${{ .variables.FLAVOR }}"
+          FLAVOR="${FLAVOR:-upstream}"
+
+          LATEST_VERSION="$({
+            ./zarf tools registry ls "${REPOSITORY}" \
+              | grep -F -- "${FLAVOR}" \
+              | awk '{ original=$0; sub(/^v/, "", $0); print $0 "\t" original }' \
+              | sort -V \
+              | tail -1 \
+              | cut -f2
+          } || true)"
+
+          if [ -z "${LATEST_VERSION}" ]; then
+            echo "No published ${FLAVOR} package found in ${REPOSITORY}" >&2
+            exit 1
+          fi
+
+          rm -rf upgrade-test
+          mkdir -p upgrade-test
+          echo "Pulling ${REPOSITORY}:${LATEST_VERSION}"
+          ./zarf package pull \
+            "oci://${REPOSITORY}:${LATEST_VERSION}" \
+            --no-progress \
+            --architecture="${ARCH}" \
+            -o upgrade-test \
+            --features values=true
+
+          test -n "$(find upgrade-test -maxdepth 1 -type f \
+            -name "zarf-package-${PACKAGE_NAME}-${ARCH}-*.tar.zst" -print -quit)"
+
+  - name: deploy-previous-package
+    description: Deploy the pulled release before installing the current package
+    actions:
+      - description: Deploy the previous package with the k3d-compatible provider
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          ARCH="${UDS_ARCH:-amd64}"
+          PACKAGE_NAME="$(./zarf tools yq '.metadata.name' zarf.yaml)"
+          PACKAGE="$(find upgrade-test -maxdepth 1 -type f \
+            -name "zarf-package-${PACKAGE_NAME}-${ARCH}-*.tar.zst" -print -quit)"
+          test -n "${PACKAGE}"
+          ./zarf package deploy "${PACKAGE}" \
+            --confirm \
+            --features values=true \
+            --set PROVIDER=pod

@@ -36,17 +36,16 @@ These changes are baked into the VM snapshot and will not affect existing images
 ## How to rebuild
 
 ```bash
-cd packer/
-
 # Rebuild both images (base → uds-core)
-./build-images-qemu.sh
+uds run build-images
 
 # Skip unchanged layers
-SKIP_BASE=1 BASE_IMAGE=output/base/lab-base.qcow2 ./build-images-qemu.sh
+uds run build-images --with skip_base=1 \
+  --with base_image=output/base/lab-base.qcow2
 ```
 
 The QEMU build produces local qcow2 files. Re-import the rebuilt files with
-`scripts/create-golden-pvc.sh`; no server configuration changes are needed.
+`uds run populate-golden-pvcs`; no server configuration changes are needed.
 
 ## Image dependency chain
 

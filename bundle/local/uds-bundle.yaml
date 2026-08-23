@@ -8,8 +8,8 @@ metadata:
 
 packages:
   - name: kubevirt
-    repository: ghcr.io/uds-packages/kubevirt
-    ref: v1.8.4-uds.2-upstream
+    path: ../kubevirt
+    ref: dev-upstream
     overrides:
       kubevirt:
         uds-kubevirt-config:
@@ -51,7 +51,10 @@ packages:
               default: false
             - name: ALLOW_IMPORTER_EGRESS
               path: network.importerEgress.enabled
-              default: false
+              default: true
+            - name: WORKLOAD_NAMESPACES
+              path: workloadNamespaces
+              default: [uds-labs-vms]
 
   - name: uds-labs-vm-images
     path: ../../packages/vm-images
@@ -86,7 +89,7 @@ packages:
             - path: storageClass
               value: local-path
             - path: maxActiveSessions
-              value: 1
+              value: 4
             # Local E2E still requires Keycloak authentication, but accepts any
             # authenticated user rather than requiring an environment group.
             - path: auth.allowedGroups

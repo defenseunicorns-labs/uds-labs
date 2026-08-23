@@ -4,9 +4,9 @@ The reference package exercises every major UDS Core integration. Verify each on
 
 ## Generated mesh resources
 
-Pepr turned the single `Package` CR into real Kubernetes and Istio objects:
+The UDS Operator turned the single `Package` CR into Kubernetes and Istio objects:
 
-```
+```bash
 uds zarf tools kubectl get virtualservice,networkpolicy,authorizationpolicy -n reference-package
 ```
 
@@ -19,7 +19,7 @@ Compare the VirtualService count now versus what you noted in step 3 — it shou
 
 ## Ambient mesh: no sidecar
 
-```
+```bash
 uds zarf tools kubectl get pods -n reference-package
 ```
 
@@ -29,7 +29,7 @@ Note **1/1** in the READY column — your app container only, no Istio sidecar i
 
 Before you can log in, bootstrap the test user. The reference package uses `uds-common` tasks for this:
 
-```
+```bash
 cd /root/reference-package && uds run setup:keycloak-user --with group="/UDS Core/Admin"
 ```
 
@@ -41,33 +41,33 @@ Once the command finishes, click the **reference-package** chip in the browser p
 
 Check the generated secret:
 
-```
+```bash
 uds zarf tools kubectl get secret reference-package-sso -n reference-package \
   -o jsonpath='{.data.KEYCLOAK_CLIENT_ID}' | base64 -d && echo
 ```
 
-Pepr created this secret and populated it from the `secretTemplate` in the Package CR. The app reads its Keycloak credentials from here — no hardcoded values, no manual Keycloak configuration.
+The UDS Operator created this secret and populated it from the `secretTemplate` in the Package CR. The app reads its Keycloak credentials from here — no hardcoded values, no manual Keycloak configuration.
 
 ## Postgres
 
-```
+```bash
 uds zarf tools kubectl get pods -n postgres
 uds zarf tools kubectl get postgresql -n postgres
 ```
 
-The postgres-operator deployed a managed PostgreSQL instance. The reference package connected to it using credentials injected via bundle overrides — the package itself has no hardcoded database configuration.
+The postgres-operator deployed a managed PostgreSQL instance. The bundle points the application chart at operator-generated credentials instead of hardcoding a password. In this example, a Helm render-time adapter converts the generated username and password into the connection string the app expects; prefer direct `secretKeyRef` bindings when an application supports separate fields.
 
 ## Monitoring
 
-```
+```bash
 uds zarf tools kubectl get servicemonitor -n reference-package
 ```
 
-Pepr created a `ServiceMonitor` from the `monitor` section in the Package CR. UDS Core's Prometheus instance automatically picks this up and begins scraping `/metrics` on the reference package pod.
+The UDS Operator created a `ServiceMonitor` from the `monitor` section in the Package CR. UDS Core's Prometheus instance automatically picks this up and begins scraping `/metrics` on the reference package pod.
 
 ## Verify
 
-```
+```bash
 uds zarf tools kubectl get package reference-package -n reference-package \
   -o jsonpath='{.status.phase}'
 ```

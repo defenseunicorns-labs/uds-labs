@@ -15,11 +15,11 @@ This is intentional — a well-structured bundle exposes these as named `variabl
 
 ## Deploy
 
-```
+```bash
 cd /root/reference-package
 ```
 
-```
+```bash
 uds run dev
 ```
 
@@ -35,7 +35,7 @@ This runs three operations in sequence:
 
 Open a Shell Terminal (Tab 2) and monitor:
 
-```
+```bash
 watch uds zarf tools kubectl get pods -A
 ```
 
@@ -45,7 +45,7 @@ Wait for pods in the `postgres` and `reference-package` namespaces to reach `Run
 
 Once deploy completes, Pepr begins reconciling the Package CR:
 
-```
+```bash
 uds zarf tools kubectl get package -n reference-package -w
 ```
 
@@ -53,7 +53,7 @@ Hit `Ctrl-C` when Phase reaches `Ready`.
 
 ## Verify
 
-```
+```bash
 uds zarf tools kubectl get pods -n reference-package --no-headers | awk '$3=="Running"' | wc -l
 ```
 

@@ -182,6 +182,7 @@ func main() {
 
 	// Protected API routes
 	mux.HandleFunc("GET /api/config", srv.getConfig)
+	mux.HandleFunc("GET /api/catalog", srv.getCatalog)
 	mux.HandleFunc("GET /api/scenarios", srv.listScenarios)
 	mux.HandleFunc("GET /api/scenarios/{id}", srv.getScenario)
 	mux.HandleFunc("POST /api/sessions", srv.createSession)
@@ -426,6 +427,16 @@ func (s *server) getConfig(w http.ResponseWriter, r *http.Request) {
 		"session_ttl_minutes": s.ttlMinutes,
 		"is_ae":               s.isAE(groupsFromRequest(r), authedEmail(r)),
 	})
+}
+
+func (s *server) getCatalog(w http.ResponseWriter, r *http.Request) {
+	catalog, err := scenario.LoadCatalog(s.scenariosFS)
+	if err != nil {
+		log.Printf("load catalog: %v", err)
+		jsonError(w, "cannot read catalog", http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, catalog)
 }
 
 func (s *server) listScenarios(w http.ResponseWriter, r *http.Request) {

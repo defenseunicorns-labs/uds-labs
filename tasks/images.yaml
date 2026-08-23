@@ -1,0 +1,337 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Image, package, and bundle build tasks
+
+---
+
+tasks:
+  - name: build-images
+    description: Build VM qcow2 images with packer (base → uds-core)
+    inputs:
+      skip:
+        description: Skip all packer builds (1 = skip)
+        default: "0"
+      skip_base:
+        description: Skip base image build
+        default: "0"
+      skip_uds_core:
+        description: Skip UDS Core image build
+        default: "0"
+      base_image:
+        description: Existing base qcow2 to use when skip_base=1
+        default: output/base/lab-base.qcow2
+      build:
+        description: Build packer images (1 = build)
+        default: "1"
+    actions:
+      - description: Generate packer SSH keypair if not present
+        cmd: |
+          if [ ! -f packer/packer-key ]; then
+            echo "Generating packer SSH keypair..."
+            ssh-keygen -t ed25519 -f packer/packer-key -N "" -q
+          fi
+          ssh-keygen -y -f packer/packer-key > packer/packer-key.pub
+      - description: Build packer images
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          # shellcheck shell=bash
+          set -euo pipefail
+          if [ "${{ .inputs.skip }}" = "1" ] || [ "${{ .inputs.build }}" != "1" ]; then
+            echo "Skipping packer builds (skip=1)"
+            exit 0
+          fi
+
+          cd packer
+          log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+          warn() { printf '[WARN] %s\n' "$*" >&2; }
+          die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+          [ -e /dev/kvm ] || die "/dev/kvm not found — KVM required"
+          command -v packer >/dev/null 2>&1 || die "packer not found"
+          command -v qemu-img >/dev/null 2>&1 || die "qemu-img not found (install qemu-utils)"
+          command -v qemu-system-x86_64 >/dev/null 2>&1 || die "qemu-system-x86_64 not found"
+          mkdir -p output
+
+          compact_qcow2() {
+            local image="$1"
+            local temporary="${image}.compact.tmp"
+            log "Compacting $image (skipping zero blocks, no compression)..."
+            qemu-img convert -O qcow2 "$image" "$temporary"
+            mv "$temporary" "$image"
+            log "Compacted: $image ($(du -sh "$image" | cut -f1))"
+          }
+
+          BASE_IMAGE=""
+          UDS_CORE_IMAGE=""
+          if [ "${{ .inputs.skip_base }}" != "1" ]; then
+            log "Stage 1: base image (~20 min)..."
+            packer init lab-base.qemu.pkr.hcl
+            packer build -force lab-base.qemu.pkr.hcl
+            BASE_IMAGE=output/base/lab-base.qcow2
+            compact_qcow2 "$BASE_IMAGE"
+            log "Base image: $BASE_IMAGE ($(du -sh "$BASE_IMAGE" | cut -f1))"
+          else
+            BASE_IMAGE="${{ .inputs.base_image }}"
+            [ -f "$BASE_IMAGE" ] || die "skip_base=1 but base_image not found: $BASE_IMAGE"
+            warn "Skipping base build — using $BASE_IMAGE"
+          fi
+
+          if [ "${{ .inputs.skip_uds_core }}" != "1" ]; then
+            log "Stage 2: UDS Core playground (~40 min)..."
+            packer init lab-playground-uds-core.qemu.pkr.hcl
+            packer build -force \
+              -var "base_image=${BASE_IMAGE}" \
+              lab-playground-uds-core.qemu.pkr.hcl
+            UDS_CORE_IMAGE=output/uds-core/lab-playground-uds-core.qcow2
+            log "UDS Core image: $UDS_CORE_IMAGE ($(du -sh "$UDS_CORE_IMAGE" | cut -f1))"
+          else
+            warn "Skipping UDS Core build"
+          fi
+
+          echo ""
+          echo "qcow2 images built and patched (cloud-init enabled)."
+          echo "Next: uds run dev --with WIPE_CLUSTER=0 --with LOCAL_VM_IMAGES=1"
+          echo "Base:     ${BASE_IMAGE:-<skipped>}"
+          echo "UDS Core: ${UDS_CORE_IMAGE:-<skipped>}"
+        maxTotalSeconds: 7200
+
+
+  - name: build-vm-images
+    description: |
+      Build VM image server container images from packer qcow2 outputs and
+      export image archives for fast, deterministic Zarf package assembly.
+      Images are tagged for ghcr.io and loaded into the local Docker daemon.
+      Run uds run build-images first to produce the qcow2 files.
+      Push to registry with: uds run push-vm-images
+    inputs:
+      build:
+        description: Build local VM image-server containers (1 = build)
+        default: "1"
+      base_qcow2:
+        description: Path to base qcow2 (combined base+tools image)
+        default: packer/output/base/lab-base.qcow2
+      uds_core_qcow2:
+        description: Path to uds-core qcow2
+        default: packer/output/uds-core/lab-playground-uds-core.qcow2
+      tag:
+        description: Image tag (defaults to package version)
+        default: ""
+    actions:
+      - description: Build OCI container images from qcow2 files
+        maxTotalSeconds: 600
+        cmd: |
+          # shellcheck shell=bash
+          if [ "${{ .inputs.build }}" != "1" ]; then
+            echo "Skipping local VM image container builds"
+            exit 0
+          fi
+          TAG="${{ .inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
+          fi
+          build_image() {
+            local name="$1" dockerfile="$2" context_dir="$3" archive="$4"
+            local image="ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
+            if [ ! -d "$context_dir" ] || ! find "$context_dir" -maxdepth 1 -type f -name '*.qcow2' -print -quit | grep -q .; then
+              echo "SKIP: no qcow2 in $context_dir — skipping $name"
+              return 0
+            fi
+            echo "Building ${image}..."
+            docker build -t "$image" -f "$dockerfile" "$context_dir"
+            echo "Exporting ${image} to ${archive}..."
+            docker save "$image" -o "$archive"
+          }
+          build_image base     packages/vm-images/Dockerfile.base     "$(dirname "${{ .inputs.base_qcow2 }}")"     packages/vm-images/base.tar
+          build_image uds-core packages/vm-images/Dockerfile.uds-core "$(dirname "${{ .inputs.uds_core_qcow2 }}")" packages/vm-images/uds-core.tar
+
+  - name: push-vm-images
+    description: Push VM image server container images to ghcr.io
+    inputs:
+      tag:
+        description: Image tag to push (defaults to package version)
+        default: ""
+    actions:
+      - description: Push VM images to registry
+        maxTotalSeconds: 600
+        cmd: |
+          TAG="${{ .inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
+          fi
+          for name in base uds-core; do
+            echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}..."
+            docker push "ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}"
+          done
+
+  - name: build-all
+    description: Build uds-labs and VM image server containers (no qcow2 needed for VM images — uses existing base layer)
+    actions:
+      - description: Build uds-labs image
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          echo "Building ${IMAGE}..."
+          docker build -t "$IMAGE" .
+        maxTotalSeconds: 600
+
+  - name: build-image
+    description: Build the uds-labs image using the reference in zarf.yaml
+    actions:
+      - description: Build Docker image
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          docker build -t "$IMAGE" .
+        maxTotalSeconds: 600
+
+  - name: push-all
+    description: Push uds-labs and VM image server containers to ghcr.io
+    actions:
+      - description: Push uds-labs image
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          echo "Pushing ${IMAGE}..."
+          docker push "$IMAGE"
+        maxTotalSeconds: 600
+
+  - name: push-image
+    description: Push the uds-labs Docker image to ghcr.io
+    actions:
+      - description: Push image to registry
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          docker push "$IMAGE"
+        maxTotalSeconds: 600
+
+  - name: build-lab-package
+    description: Build the uds-labs Zarf package (lab server, operator, CRD, RBAC)
+    actions:
+      - description: Build Zarf package
+        cmd: |
+          mkdir -p ~/.cache/zarf-tmp
+          zarf package create . --confirm --tmpdir ~/.cache/zarf-tmp
+        maxTotalSeconds: 600
+
+  - name: build-vm-images-package
+    description: Build a local VM-image package or stage the published version consumed by the UDS bundle
+    inputs:
+      local:
+        description: Build from local image archives (1) or pull the published package (0)
+        default: "1"
+      repository:
+        description: OCI repository containing published VM-image packages
+        default: ghcr.io/defenseunicorns-labs/uds-labs-vm-images
+    actions:
+      - description: Stage the VM images Zarf package
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          VERSION=$(grep '^  version:' packages/vm-images/zarf.yaml | head -1 | awk '{print $2}')
+          mkdir -p packages/vm-images
+
+          if [ "${{ .inputs.local }}" != "1" ]; then
+            EXISTING=$(find packages/vm-images -maxdepth 1 -type f -name "zarf-package-uds-labs-vm-images-*-${VERSION}.tar.zst" -print -quit)
+            if [ -n "$EXISTING" ]; then
+              echo "Reusing staged VM-image package $EXISTING"
+              exit 0
+            fi
+            REPOSITORY="${{ .inputs.repository }}"
+            echo "Pulling published VM-image package ${REPOSITORY}:${VERSION}"
+            zarf package pull "oci://${REPOSITORY}:${VERSION}" --output-directory packages/vm-images
+            exit 0
+          fi
+
+          find packages/vm-images -maxdepth 1 -type f -name 'zarf-package-uds-labs-vm-images-*.tar.zst' -delete
+          for archive in packages/vm-images/base.tar packages/vm-images/uds-core.tar; do
+            [ -f "$archive" ] || { echo "ERROR: missing $archive — run 'uds run build-vm-images' first" >&2; exit 1; }
+          done
+          mkdir -p ~/.cache/zarf-tmp
+          zarf package create packages/vm-images --confirm --skip-sbom --tmpdir ~/.cache/zarf-tmp --output packages/vm-images
+        maxTotalSeconds: 3600
+
+  - name: build-bundle
+    description: Build the selected UDS bundle profile
+    inputs:
+      profile:
+        description: Bundle profile to build (default or local)
+        default: default
+    actions:
+      - description: Create UDS bundle
+        cmd: |
+          BUNDLE_TMPDIR="${ZARF_TMPDIR:-$HOME/.cache/zarf-tmp}"
+          mkdir -p "$BUNDLE_TMPDIR"
+          case "${{ .inputs.profile }}" in
+            default) BUNDLE_DIR=bundle ;;
+            local) BUNDLE_DIR=bundle/local ;;
+            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
+          esac
+          uds create "$BUNDLE_DIR" --confirm --tmpdir "$BUNDLE_TMPDIR"
+        # Bundle assembly embeds the large VM image package built above.
+        maxTotalSeconds: 3600
+
+  - name: deploy-bundle
+    description: Deploy the latest bundle for the selected profile
+    inputs:
+      profile:
+        description: Bundle profile to deploy (default or local)
+        default: default
+      config:
+        description: Path to the ignored, environment-specific default-profile config
+        default: bundle/uds-config.yaml
+    actions:
+      - description: Deploy bundle
+        cmd: |
+          case "${{ .inputs.profile }}" in
+            default)
+              BUNDLE_DIR=bundle
+              BUNDLE_NAME=uds-labs
+              ;;
+            local)
+              BUNDLE_DIR=bundle/local
+              BUNDLE_NAME=uds-labs-local
+              ;;
+            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
+          esac
+          BUNDLE=$(find "$BUNDLE_DIR" -maxdepth 1 -type f -name "uds-bundle-${BUNDLE_NAME}-*.tar.zst" -print | sort | tail -1)
+          [ -n "$BUNDLE" ] || { echo "ERROR: no ${BUNDLE_NAME} bundle found in ${BUNDLE_DIR}/ — run build-bundle first"; exit 1; }
+
+          if [ "${{ .inputs.profile }}" = "local" ]; then
+            echo "Deploying local profile: $BUNDLE"
+            uds deploy "$BUNDLE" --confirm
+            exit 0
+          fi
+
+          CONFIG="${{ .inputs.config }}"
+          case "$CONFIG" in /*) ;; *) CONFIG="$(pwd)/$CONFIG" ;; esac
+          [ -f "$CONFIG" ] || { echo "ERROR: missing deployment config: $CONFIG — copy bundle/uds-config.example.yaml and customize it"; exit 1; }
+          echo "Deploying: $BUNDLE with $CONFIG"
+          UDS_CONFIG="$CONFIG" uds deploy "$BUNDLE" --confirm
+        maxTotalSeconds: 3600
+
+  - name: build-and-push
+    description: Build then push all images to ghcr.io
+    actions:
+      - task: build-all
+      - task: push-all

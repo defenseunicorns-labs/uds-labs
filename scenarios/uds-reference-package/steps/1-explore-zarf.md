@@ -2,22 +2,22 @@
 
 UDS Core is already running on this cluster. Your job in this lab is to understand how a real UDS package is structured, then deploy it.
 
-The [UDS Reference Package](https://github.com/uds-packages/reference-package) is the canonical example maintained by Defense Unicorns. It's the standard ISVs follow when building UDS-compatible packages.
+The [UDS Reference Package](https://github.com/uds-packages/reference-package) is a maintained example from Defense Unicorns. Use it to understand package boundaries and current integration patterns, then validate the details against the versions and needs of your own application.
 
 The repo has been pre-cloned for you. Move into it:
 
-```
+```bash
 cd /root/reference-package
 ```
 
 In your own environment you'd clone it with:
-```
+```bash
 git clone --depth 1 https://github.com/uds-packages/reference-package
 ```
 
 ## What's in the repo
 
-```
+```bash
 ls -1
 ```
 
@@ -33,7 +33,7 @@ Key directories:
 
 ## Read zarf.yaml
 
-```
+```bash
 cat zarf.yaml
 ```
 
@@ -44,11 +44,11 @@ Notice what is **not** in `zarf.yaml`:
 - No cluster setup
 - No Keycloak deployment
 
-`zarf.yaml` contains exactly one thing: the reference package application. It references a pre-built container image from `ghcr.io` and a local Helm chart. That's the entire scope of a Zarf package — **your app, nothing else**.
+`zarf.yaml` contains the reference package application and its UDS configuration chart. Shared infrastructure dependencies stay out of the application package so a deployment bundle can select, order, and configure them for the target environment.
 
 ## Check the image reference
 
-```
+```bash
 grep -A3 "images:" zarf.yaml
 ```
 
@@ -56,6 +56,6 @@ The container image is pulled from `ghcr.io` at build time and bundled into the 
 
 ## Verify
 
-```
+```bash
 ls chart/ values/ bundle/
 ```
