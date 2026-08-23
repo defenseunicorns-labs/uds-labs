@@ -41,7 +41,9 @@ jobs:
     with:
       timeout: 30
       options: --set BASE_REPO="ghcr.io/defenseunicorns-labs"
-      runsOn: appstore-8-core-amd64
+      # defenseunicorns-labs uses GitHub-hosted runners; appstore-* labels
+      # belong to the uds-packages organization and leave this job queued here.
+      runsOn: ubuntu-latest
       upgrade-flavors: ${{ needs.check-flavor.outputs.upgrade-flavors }}
       flavor: ${{ matrix.flavor }}
       type: ${{ matrix.type }}
