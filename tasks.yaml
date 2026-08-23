@@ -7,22 +7,31 @@ includes:
   - attest: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/attest.yaml
   - build: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/build.yaml
   - olm: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/olm.yaml
-  - publish: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/publish.yaml
+  # CAT/Witness tasks remain sourced from udm-common; package publishing uses
+  # the standard uds-common tasks below.
   - scan: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/scan.yaml
   - setup: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/setup.yaml
   - vouch: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/vouch.yaml
   - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
-  - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/create.yaml
-  - pull: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/pull.yaml
-  - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/deploy.yaml
-  - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/actions.yaml
-  - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/upgrade.yaml
-  - uds-publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.26.3/tasks/publish.yaml
+  - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/create.yaml
+  - pull: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/pull.yaml
+  - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/deploy.yaml
+  - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/actions.yaml
+  - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/upgrade.yaml
+  - publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
   - quality: tasks/quality.yaml
   - images: tasks/images.yaml
   - cluster: tasks/cluster.yaml
   - access: tasks/access.yaml
   - workflow: tasks/workflow.yaml
+
+variables:
+  # Set by the release workflow. Leaving these empty keeps local package
+  # publishing from attempting an interactive CAT login.
+  - name: OLM_CAT
+    default: ""
+  - name: OLM_ORG
+    default: ""
 
 # The implementations are grouped under tasks/. These adapters keep the
 # original unqualified task names working while tasks.yaml remains the single
@@ -502,6 +511,57 @@ tasks:
     description: Verify golden PVCs, platform, authservice, and demo-route authorization
     actions:
       - task: workflow:smoke-test
+
+  # Called by uds-common's callable-publish workflow. This keeps the standard
+  # release contract while preserving the lab-specific image/package build.
+  - name: publish-package
+    description: Build, vouch to CAT, and publish the UDS Labs Zarf package
+    actions:
+      - task: actions:determine-arch
+
+      - description: Generate the CAT Fulcio token for a signed package build
+        if: ${{ and (ne .variables.OLM_CAT "") (ne .variables.OLM_ORG "") }}
+        task: olm:generate-fulcio-token
+        with:
+          olm_cat: ${{ .variables.OLM_CAT }}
+          olm_org: ${{ .variables.OLM_ORG }}
+          github_token: ${{ .variables.GH_TOKEN }}
+
+      - description: Build the application image using the zarf.yaml image reference
+        task: images:build-image
+
+      - description: Create a signed Zarf package for CAT
+        if: ${{ and (ne .variables.OLM_CAT "") (ne .variables.OLM_ORG "") }}
+        task: build:zarf-package
+        with:
+          zarf_path: .
+          architecture: ${{ .variables.ARCH }}
+          zarf_flavor: ${{ .variables.FLAVOR }}
+          witness_workingdir: .
+
+      - description: Create an unsigned package for local runs without CAT
+        if: ${{ or (eq .variables.OLM_CAT "") (eq .variables.OLM_ORG "") }}
+        task: build:zarf-package
+        with:
+          zarf_path: .
+          architecture: ${{ .variables.ARCH }}
+          zarf_flavor: ${{ .variables.FLAVOR }}
+          enable_sigstore: "false"
+          witness_workingdir: .
+
+      - description: Vouch the package and its build attestation to CAT
+        if: ${{ and (ne .variables.OLM_CAT "") (ne .variables.OLM_ORG "") }}
+        task: vouch:package
+        with:
+          olm_cat: ${{ .variables.OLM_CAT }}
+          olm_org: ${{ .variables.OLM_ORG }}
+          attestations: zarf-create-witness.json
+          test_directory: ""
+
+      - description: Publish the package to GHCR using the standard UDS package task
+        task: publish:package
+        with:
+          team: uds
 
   - name: local-e2e
     description: "Full local E2E on bare k3s, including UDS Core and browser access"

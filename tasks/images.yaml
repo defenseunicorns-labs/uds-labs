@@ -167,18 +167,22 @@ tasks:
     actions:
       - description: Build uds-labs image
         cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          echo "Building ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}..."
-          docker build -t "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}" .
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          echo "Building ${IMAGE}..."
+          docker build -t "$IMAGE" .
         maxTotalSeconds: 600
 
   - name: build-image
-    description: Build the uds-labs Docker image tagged for ghcr.io
+    description: Build the uds-labs image using the reference in zarf.yaml
     actions:
       - description: Build Docker image
         cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker build -t "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}" .
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          docker build -t "$IMAGE" .
         maxTotalSeconds: 600
 
   - name: push-all
@@ -186,9 +190,11 @@ tasks:
     actions:
       - description: Push uds-labs image
         cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}..."
-          docker push "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          echo "Pushing ${IMAGE}..."
+          docker push "$IMAGE"
         maxTotalSeconds: 600
 
   - name: push-image
@@ -196,8 +202,10 @@ tasks:
     actions:
       - description: Push image to registry
         cmd: |
-          VERSION=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
-          docker push "ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
+          set -euo pipefail
+          IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
+          [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
+          docker push "$IMAGE"
         maxTotalSeconds: 600
 
   - name: build-lab-package

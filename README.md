@@ -52,6 +52,19 @@ retaining that Session PVC; resume reattaches the same disk.
 **First-time only:**
 - Internet access (pulls Ubuntu cloud image and standalone UDS Core packages)
 
+## Releases
+
+Releases follow the standard UDS Package Kit flow:
+
+1. Update the `upstream` version in [`releaser.yaml`](./releaser.yaml) through a pull request.
+2. Merging to `master` runs [`release.yaml`](./.github/workflows/release.yaml).
+3. The workflow builds the Zarf package, publishes it to GHCR, and creates the GitHub release/tag.
+4. The signed package build is vouched to CAT under the configured `defense-unicorns` organization.
+
+The package is published at `ghcr.io/defenseunicorns-labs/uds/uds-labs` with an
+`-upstream` tag. VM-image package publication remains a separate infrastructure
+artifact because it requires the Packer/KVM build environment.
+
 ## Quick Start
 
 ### Full local E2E from scratch

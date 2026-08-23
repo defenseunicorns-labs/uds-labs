@@ -1,0 +1,9 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# UDS Package Kit release metadata. The package version in zarf.yaml remains
+# the application version in source; uds-pk writes the UDS release version into
+# the checkout used by the publish workflow.
+flavors:
+  - name: upstream
+    version: v0.5.0-uds.0
