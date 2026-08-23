@@ -20,6 +20,7 @@ includes:
   - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/upgrade.yaml
   - publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
   - quality: tasks/quality.yaml
+  - test: tasks/test.yaml
   - images: tasks/images.yaml
   - cluster: tasks/cluster.yaml
   - access: tasks/access.yaml
@@ -68,6 +69,9 @@ tasks:
       - description: Lint YAML files
         cmd: yamllint .
       - description: Lint shell scripts
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           find . -type f -name '*.sh' -not -path './.git/*' -print0 \
@@ -511,6 +515,18 @@ tasks:
     description: Verify golden PVCs, platform, authservice, and demo-route authorization
     actions:
       - task: workflow:smoke-test
+
+  # Called by uds-common's callable-test workflow. Keep these adapters at the
+  # root because callable-test invokes the unqualified task names.
+  - name: test-install
+    description: Test installing the current package on a fresh k3d cluster
+    actions:
+      - task: test:test-install
+
+  - name: test-upgrade
+    description: Test upgrading the latest published package to the current branch
+    actions:
+      - task: test:test-upgrade
 
   # Called by uds-common's callable-publish workflow. This keeps the standard
   # release contract while preserving the lab-specific image/package build.
