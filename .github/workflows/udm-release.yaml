@@ -41,6 +41,24 @@ jobs:
           sh /tmp/golangci-lint-install.sh -b /usr/local/bin v2.11.4
           rm /tmp/golangci-lint-install.sh
 
+      - name: Install UDS Package Kit
+        env:
+          UDS_PK_VERSION: v0.1.12
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH=amd64 ;;
+            aarch64) ARCH=arm64 ;;
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+          esac
+          curl -fsSL -o /usr/local/bin/uds-pk \
+            "https://github.com/defenseunicorns/uds-pk/releases/download/${UDS_PK_VERSION}/uds-pk_${UDS_PK_VERSION}_$(uname -s)_${ARCH}"
+          chmod +x /usr/local/bin/uds-pk
+
+      - name: Apply the existing UDS release version
+        run: uds-pk release update-yaml upstream
+
       - name: Attest, vouch, and publish to registry.uds-mil.us
         run: |
           uds run udm-publish --no-progress \
