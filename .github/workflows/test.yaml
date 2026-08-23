@@ -1,0 +1,64 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: Test
+
+on:
+  pull_request:
+    types: [milestoned, opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  packages: read
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-flavor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Determine test flavors
+        uses: defenseunicorns/uds-common/.github/actions/test-flavor@729f266d614a6e4f69876c2c69a789b78cc97853 # v1.28.0
+        id: test-flavor
+    outputs:
+      upgrade-flavors: ${{ steps.test-flavor.outputs.upgrade-flavors }}
+
+  validate:
+    needs: check-flavor
+    strategy:
+      fail-fast: false
+      matrix:
+        type: [install, upgrade]
+        flavor: [upstream]
+    uses: defenseunicorns/uds-common/.github/workflows/callable-test.yaml@729f266d614a6e4f69876c2c69a789b78cc97853 # v1.28.0
+    with:
+      timeout: 30
+      options: --set BASE_REPO="ghcr.io/defenseunicorns-labs"
+      runsOn: appstore-8-core-amd64
+      upgrade-flavors: ${{ needs.check-flavor.outputs.upgrade-flavors }}
+      flavor: ${{ matrix.flavor }}
+      type: ${{ matrix.type }}
+    secrets: inherit
+
+  verify-test:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: always()
+    steps:
+      - name: Check validate result
+        run: |
+          echo "validate result: ${{ needs.validate.result }}"
+
+          if [ "${{ needs.validate.result }}" != "success" ]; then
+            echo "One or more tests failed."
+            exit 1
+          fi
+
+          echo "All tests passed successfully!"

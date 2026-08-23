@@ -84,6 +84,9 @@ tasks:
     actions:
       - description: Patch CoreDNS NodeHosts and restart dependent workloads
         maxTotalSeconds: 300
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
@@ -167,6 +170,9 @@ tasks:
         default: ""
     actions:
       - description: Apply a LabSession resource
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           NAME="${{ .inputs.name }}"
@@ -199,6 +205,9 @@ tasks:
     description: Start nginx SNI reverse proxy (auto-detects MetalLB IPs)
     actions:
       - description: Generate nginx.conf and start proxy
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"

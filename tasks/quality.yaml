@@ -43,6 +43,9 @@ tasks:
       - description: Lint YAML files
         cmd: yamllint .
       - description: Lint shell scripts
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           find . -type f -name '*.sh' -not -path './.git/*' -print0 \
@@ -67,6 +70,9 @@ tasks:
     description: Validate deployment ordering without building images
     actions:
       - description: Validate VM image server and CDI import lifecycle
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
@@ -87,6 +93,9 @@ tasks:
     description: Render and validate Helm and Zarf packages without a cluster
     actions:
       - description: Run packaging contracts and Helm lint
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
@@ -100,6 +109,9 @@ tasks:
             >/dev/null
           uds inspect bundle/local/uds-bundle.yaml --no-progress --no-color >/dev/null
       - description: Lint and render Zarf package definitions
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail

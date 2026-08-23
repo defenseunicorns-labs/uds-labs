@@ -222,6 +222,9 @@ tasks:
     actions:
       - description: Import golden PVCs through temporary CDI HTTP sources
         maxTotalSeconds: 3600
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
