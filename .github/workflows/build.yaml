@@ -1,20 +1,10 @@
 name: CI
 
-# Artifacts produced by this workflow:
-#   - zarf-package-uds-labs-amd64-<version>.tar.zst  → published to UDS Army pipeline
-#
-# The uds-labs image is built locally and embedded in the zarf package by
-# `zarf package create`. It is NOT pushed to GHCR separately — the zarf package
-# and UDS bundle are the sole release artifacts.
-#
-# The UDS bundle (bundle/uds-bundle.yaml) depends on ghcr.io/uds-packages/kubevirt,
-# a Defense Unicorns internal package. Never add bundle-build or bundle-publish
-# steps to this workflow.
-
+# PR and branch CI validates source quality. Release publication is handled by
+# release.yaml through the standard uds-common callable-publish workflow.
 on:
   push:
     branches: [master]
-    tags: ["v*"]
   pull_request:
     branches: [master]
 
@@ -39,10 +29,11 @@ jobs:
           echo "edfa587f31bde70db161d1e5b783e086a1627d7e2f7c91de5f7cca79bcdf8631  /tmp/golangci-lint-install.sh" | sha256sum -c -
           sh /tmp/golangci-lint-install.sh -b /usr/local/bin v2.11.4
           rm /tmp/golangci-lint-install.sh
-      - run: |
+      - name: Generate CAT Fulcio token
+        run: |
           uds run olm:generate-fulcio-token \
             --with olm_cat="cat-api.uds-mil.us" \
-            --with olm_org="enxoco" \
+            --with olm_org="defenseunicorns" \
             --with github_token="${{ secrets.GITHUB_TOKEN }}"
       - name: Lint
         run: uds run attest:lint
@@ -51,53 +42,3 @@ jobs:
           uds run scan:security \
             --with gitleaks_scan_path="." \
             --with opengrep_scan_path="."
-
-      # TODO: These steps require a self-hosted runner with /dev/kvm, sufficient
-      # RAM (16GB+), and large disk (200GB+). Standard GitHub-hosted runners cannot
-      # build the VM images or run the full e2e stack. Re-enable once a self-hosted
-      # runner is configured with the appropriate labels. Run manually in the meantime:
-      #   uds run build-image
-      #   uds run build:zarf-package --with build_command='uds run build-image && uds run build-lab-package'
-      #   uds run vouch:package ...
-      #   uds run publish:zarf-package ...
-
-      # Build the uds-labs Docker image into the local daemon so zarf package
-      # create can embed it. VM images are pulled from ghcr.io at create time.
-      - name: Build image
-        if: false
-        run: uds run build-image
-
-      # Builds the UDS Labs server/operator Zarf package.
-      # The separate VM image package is assembled by build-vm-images-package.
-      # The UDS bundle (bundle/) must be built on internal DU infrastructure.
-      - name: Build zarf package
-        if: false
-        run: uds run build:zarf-package --with build_command='uds run build-image && uds run build-lab-package'
-
-      - name: Vouch
-        if: false
-        run: |
-          uds run vouch:package \
-            --with attestations="lint-witness.json,gitleaks-witness.json,opengrep-witness.json,zarf-create-witness.json" \
-            --with sarif_files="gitleaks.sarif.json,opengrep.sarif.json" \
-            --with olm_cat="cat-api.uds-mil.us" \
-            --with olm_org="enxoco"
-
-      - name: Publish zarf package
-        if: false
-        run: |
-          uds run publish:zarf-package \
-            --with registry_org="enxoco" \
-            --with registry_user_id="${{ secrets.REGISTRY_USER_ID }}" \
-            --with registry_password="${{ secrets.REGISTRY_PASSWORD }}"
-
-      - name: Create GitHub Release
-        if: false
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" \
-            --title "v${VERSION}" \
-            --generate-notes \
-            "zarf-package-uds-labs-amd64-${VERSION}.tar.zst"
