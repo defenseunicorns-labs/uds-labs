@@ -62,8 +62,11 @@ Releases follow the standard UDS Package Kit flow:
 4. The signed package build is vouched to CAT under the configured `defense-unicorns` organization.
 
 The package is published at `ghcr.io/defenseunicorns-labs/uds/uds-labs` with an
-`-upstream` tag. VM-image package publication remains a separate infrastructure
-artifact because it requires the Packer/KVM build environment.
+`-upstream` tag. In parallel, [`udm-release.yaml`](./.github/workflows/udm-release.yaml)
+runs the UDM compliance pipeline and publishes the vouched package to
+`registry.uds-mil.us/defenseunicorns`. It uses the repository's `REGISTRY_USER_ID` and
+`REGISTRY_PASSWORD` secrets. VM-image package publication remains a separate
+infrastructure artifact because it requires the Packer/KVM build environment.
 
 ## Quick Start
 
