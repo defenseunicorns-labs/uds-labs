@@ -8,7 +8,7 @@
     "imagePullPolicy",
     "vmNamespace",
     "sessionTTLMinutes",
-    "provider",
+    "operator",
     "goldenPVCs",
     "goldenPVCNamespace",
     "goldenPVCDiskSize",
@@ -45,12 +45,17 @@
       "type": "integer",
       "minimum": 1
     },
-    "provider": {
-      "type": "string",
-      "enum": [
-        "kubevirt",
-        "pod"
-      ]
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     },
     "goldenPVCs": {
       "type": "object",

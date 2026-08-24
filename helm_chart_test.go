@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 package labplatform_test
 
 import (
@@ -147,20 +150,24 @@ func TestHelmChart_KubeVirtProviderExemptsCDIClonePodsFromIstioOverridePolicy(t 
 	}
 }
 
-func TestHelmChart_PodProviderOmitsKubeVirtResources(t *testing.T) {
-	out := helmTemplate(t, "--set", "provider=pod")
-	for _, resource := range []string{"datavolumes", "virtualmachineinstances", "kind: Exemption"} {
-		if strings.Contains(out, resource) {
-			t.Errorf("pod provider unexpectedly rendered %s", resource)
-		}
+func TestHelmChart_OperatorCanBeDisabledForPackageOnlyTests(t *testing.T) {
+	out := helmTemplate(t, "--set", "operator.enabled=false")
+	if strings.Contains(out, "name: lab-operator") {
+		t.Fatal("disabled operator unexpectedly rendered the operator Deployment")
+	}
+	if strings.Contains(out, "name: lab-operator-config") {
+		t.Fatal("disabled operator unexpectedly rendered the operator ConfigMap")
+	}
+	if !strings.Contains(out, "kind: Deployment\nmetadata:\n  name: uds-labs") {
+		t.Fatal("disabling the operator must retain the application Deployment")
 	}
 }
 
-func TestHelmChart_RejectsUnsupportedProvider(t *testing.T) {
-	cmd := helmTemplateCommand("--set", "provider=invalid")
+func TestHelmChart_RejectsRemovedProviderValue(t *testing.T) {
+	cmd := helmTemplateCommand("--set", "provider=pod")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected invalid provider to fail Helm validation\n%s", out)
+		t.Fatalf("expected removed provider value to fail Helm validation\n%s", out)
 	}
 	if !strings.Contains(string(out), "provider") {
 		t.Fatalf("expected provider validation error, got:\n%s", out)

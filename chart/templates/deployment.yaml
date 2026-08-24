@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -60,6 +63,7 @@ roleRef:
   kind: Role
   name: uds-labs-demo-tokens
   apiGroup: rbac.authorization.k8s.io
+{{- if .Values.operator.enabled }}
 ---
 # Operator: cluster-wide watch — LabSessions, Services, NetworkPolicies, Secrets.
 # controller-runtime initializes cluster-scoped informers for all watched types.
@@ -80,14 +84,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
-{{- if eq (default "kubevirt" .Values.provider) "kubevirt" }}
   - apiGroups: ["cdi.kubevirt.io"]
     resources: ["datavolumes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachineinstances"]
     verbs: ["get", "list", "watch"]
-{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -121,14 +123,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "update", "patch", "delete"]
-{{- if eq (default "kubevirt" .Values.provider) "kubevirt" }}
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachineinstances"]
     verbs: ["create", "get", "list", "watch", "update", "delete"]
   - apiGroups: ["cdi.kubevirt.io"]
     resources: ["datavolumes"]
     verbs: ["create", "update", "delete"]
-{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -143,6 +143,7 @@ roleRef:
   kind: Role
   name: lab-operator
   apiGroup: rbac.authorization.k8s.io
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -215,6 +216,7 @@ spec:
               drop:
                 - ALL
 ---
+{{- if .Values.operator.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -273,3 +275,4 @@ spec:
         - name: lab-operator-config
           configMap:
             name: lab-operator-config
+{{- end }}

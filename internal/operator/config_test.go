@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 package operator
 
 import (
@@ -8,7 +11,6 @@ import (
 
 func TestParseAndSizeOverrides(t *testing.T) {
 	data := []byte(`
-provider: kubevirt
 sizes:
   small:
     cpu: "2"
@@ -25,9 +27,6 @@ goldenPVCDiskSize: "40Gi"
 	c, err := parse(data)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
-	}
-	if c.Provider != "kubevirt" {
-		t.Errorf("provider = %q, want kubevirt", c.Provider)
 	}
 	if c.GoldenPVCs["uds-core"] == "" {
 		t.Errorf("missing uds-core golden PVC name")

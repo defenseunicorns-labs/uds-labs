@@ -281,7 +281,7 @@ tasks:
           done
 
           kubectl get namespace "$GOLDEN_NAMESPACE" >/dev/null 2>&1 \
-            || die "namespace $GOLDEN_NAMESPACE not found — deploy the local bundle first"
+            || die "namespace $GOLDEN_NAMESPACE not found — deploy the canonical bundle first"
           kubectl get crd datavolumes.cdi.kubevirt.io >/dev/null 2>&1 \
             || die "CDI DataVolume CRD not found — deploy CDI first"
 
@@ -338,26 +338,26 @@ tasks:
             log "Disk size for $pvc_name: $disk_size"
 
             kubectl delete datavolume "$pvc_name" -n "$GOLDEN_NAMESPACE" --ignore-not-found=true
-            cat <<EOF | kubectl apply -f -
-          apiVersion: cdi.kubevirt.io/v1beta1
-          kind: DataVolume
-          metadata:
-            name: ${pvc_name}
-            namespace: ${GOLDEN_NAMESPACE}
-            labels:
-              labs.uds.dev/golden-pvc: "true"
-              labs.uds.dev/tier: ${tier}
-          spec:
-            source:
-              http:
-                url: "${image_url}"
-            pvc:
-              accessModes:
-                - ReadWriteOnce
-              resources:
-                requests:
-                  storage: ${disk_size}
-          EOF
+            printf '%s\n' \
+              'apiVersion: cdi.kubevirt.io/v1beta1' \
+              'kind: DataVolume' \
+              'metadata:' \
+              "  name: ${pvc_name}" \
+              "  namespace: ${GOLDEN_NAMESPACE}" \
+              '  labels:' \
+              '    labs.uds.dev/golden-pvc: "true"' \
+              "    labs.uds.dev/tier: ${tier}" \
+              'spec:' \
+              '  source:' \
+              '    http:' \
+              "      url: \"${image_url}\"" \
+              '  pvc:' \
+              '    accessModes:' \
+              '      - ReadWriteOnce' \
+              '    resources:' \
+              '      requests:' \
+              "        storage: ${disk_size}" \
+              | kubectl apply -f -
 
             log "Waiting for DataVolume $pvc_name to reach Succeeded..."
             local deadline=$(( $(date +%s) + 1800 )) phase
@@ -423,11 +423,11 @@ tasks:
           fi
           uds zarf package deploy "${{ .inputs.base_package }}" \
             --set-variables DOMAIN=uds.dev \
-            --values bundle/local/core-base-values.yaml \
+            --values bundle/core-base-values.yaml \
             --confirm
           uds zarf package deploy "${{ .inputs.identity_package }}" \
             --set-variables DOMAIN=uds.dev \
-            --values bundle/local/core-identity-values.yaml \
+            --values bundle/core-identity-values.yaml \
             --confirm
           kubectl wait --for=condition=Ready package/keycloak -n keycloak --timeout=10m
           kubectl wait --for=condition=Ready package/authservice -n authservice --timeout=10m
