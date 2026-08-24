@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 # yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
 
-# Package-level CI tests intentionally use the pod provider. The standard
-# callable-test workflow runs on k3d, where KubeVirt and its golden PVCs are
-# unavailable. The production KubeVirt path remains covered by local-e2e.
+# Package-level CI tests run on k3d without the KubeVirt-backed operator. The
+# production KubeVirt path is covered by local-e2e on a KVM-capable host.
 
 includes:
   - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/create.yaml
@@ -22,14 +21,7 @@ tasks:
   - name: health-check
     description: Verify the UDS Labs server and operator are available
     actions:
-      - description: UDS Labs server is available
-        maxTotalSeconds: 300
-        wait:
-          cluster:
-            kind: Deployment
-            name: uds-labs
-            namespace: uds-labs
-            condition: Available
+      - task: server-health-check
       - description: UDS Labs operator is available
         maxTotalSeconds: 300
         wait:
@@ -38,6 +30,24 @@ tasks:
             name: lab-operator
             namespace: uds-labs
             condition: Available
+
+  - name: server-health-check
+    description: Verify the UDS Labs server is available
+    actions:
+      - description: UDS Labs server is available
+        maxTotalSeconds: 300
+        wait:
+          cluster:
+            kind: Deployment
+            name: uds-labs
+            namespace: uds-labs
+            condition: Available
+
+  - name: package-health
+    description: Verify the package without requiring the KubeVirt operator
+    actions:
+      - task: server-health-check
+      - task: package-ready
 
   - name: package-ready
     description: Verify the UDS Package reconciles successfully
@@ -67,23 +77,36 @@ tasks:
           options: "--skip-sbom"
 
   - name: deploy-test-package
-    description: Deploy the package with the k3d-compatible pod provider
+    description: Deploy the package with an optional operator for the target cluster
+    inputs:
+      operator_enabled:
+        description: Enable the KubeVirt-backed operator
+        default: "false"
     actions:
       - task: deploy:package
         with:
-          options: "--set PROVIDER=pod"
+          options: "--set OPERATOR_ENABLED=${{ .inputs.operator_enabled }}"
 
   - name: create-deploy-test-package
     description: Deploy the package and run package-level health checks
+    inputs:
+      operator_enabled:
+        description: Enable the KubeVirt-backed operator
+        default: "false"
     actions:
       - task: deploy-test-package
-      - task: all
+        with:
+          operator_enabled: ${{ .inputs.operator_enabled }}
+      - if: ${{ eq .inputs.operator_enabled "true" }}
+        task: all
+      - if: ${{ ne .inputs.operator_enabled "true" }}
+        task: package-health
 
   - name: dev
-    description: Rebuild and deploy the package against an existing cluster
+    description: Rebuild and deploy the package against an existing k3d cluster
     actions:
       - task: create-dev-package
-      - task: deploy-test-package
+      - task: create-deploy-test-package
 
   # CI invokes these names through uds-common's callable-test workflow.
   - name: test-install
@@ -92,6 +115,8 @@ tasks:
       - task: create-dev-package
       - task: setup:k3d-test-cluster
       - task: create-deploy-test-package
+        with:
+          operator_enabled: "false"
 
   - name: test-upgrade
     description: Test upgrading the latest published package to the current branch
@@ -101,6 +126,8 @@ tasks:
       - task: deploy-previous-package
       - task: create-dev-package
       - task: create-deploy-test-package
+        with:
+          operator_enabled: "false"
 
   - name: pull-latest-package
     description: Pull the latest published upstream package for the upgrade test
@@ -150,7 +177,7 @@ tasks:
   - name: deploy-previous-package
     description: Deploy the pulled release before installing the current package
     actions:
-      - description: Deploy the previous package with the k3d-compatible provider
+      - description: Deploy the previous package with the operator disabled for k3d
         shell:
           linux: bash
           darwin: bash
@@ -164,4 +191,4 @@ tasks:
           ./zarf package deploy "${PACKAGE}" \
             --confirm \
             --features values=true \
-            --set PROVIDER=pod
+            --set OPERATOR_ENABLED=false

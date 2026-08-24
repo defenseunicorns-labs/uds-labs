@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 domain: uds.dev
 image: ghcr.io/defenseunicorns-labs/uds-labs:0.4.1
 # Zarf's transformed tag is stable for a given source reference. Always check
@@ -7,8 +10,10 @@ vmNamespace: uds-labs-vms
 sessionTTLMinutes: 240
 maxActiveSessions: 4
 
-# Provider backend: "kubevirt" (production) or "pod" (dev / no nested-virt).
-provider: kubevirt
+# The operator is disabled only for package-level k3d tests where KubeVirt and
+# CDI are intentionally absent. Production and local E2E deployments keep it enabled.
+operator:
+  enabled: true
 
 # Portable scheduling controls. Environment-specific labels and taints belong
 # in bundle/CustomerDeployment overrides, not these defaults.

@@ -27,7 +27,7 @@ Split the platform into two binaries:
 - Reconciles each `LabSession` to: VMI + headless Service + NetworkPolicy
 - Enforces TTL by checking `LabSession.spec.expiresAt` and deleting expired objects
 - Manages VMI readiness: two-phase (watch VMI phase → `Running`, then HTTP poll ttyd `:7681`) and updates `LabSession.status`
-- Routes to correct provider implementation based on `LAB_PROVIDER` env var
+- Delegates infrastructure lifecycle through the provider interface; the current production adapter is KubeVirt
 
 `LabSession` CRD carries all session metadata as spec/annotations: `sessionID`, `scenarioID`, `userID`, `size`, `expiresAt`. VMI annotations mirror this for k8s-native state recovery — operator reconstructs in-memory state by listing VMIs on startup.
 

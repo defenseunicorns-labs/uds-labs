@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 package labplatform_test
 
 import (
@@ -320,7 +323,7 @@ func TestVMImageChartRendersPortablePlacementAndStorage(t *testing.T) {
 	}
 }
 
-func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
+func TestCanonicalBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	bundle := string(mustReadFile(t, "bundle/uds-bundle.yaml"))
 	positions := []int{
 		strings.Index(bundle, "name: kubevirt"),
@@ -330,7 +333,7 @@ func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	}
 	for i, position := range positions {
 		if position < 0 || (i > 0 && position <= positions[i-1]) {
-			t.Fatal("development bundle must order KubeVirt, CDI, VM images, then UDS Labs")
+			t.Fatal("canonical bundle must order KubeVirt, CDI, VM images, then UDS Labs")
 		}
 	}
 
@@ -382,54 +385,45 @@ func TestDevelopmentBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	}
 }
 
-func TestLocalE2EProfileUsesK3sDefaults(t *testing.T) {
-	profile := string(mustReadFile(t, "bundle/local/uds-bundle.yaml"))
-	for _, required := range []string{
-		"name: uds-labs-local",
-		"path: goldenPVCs.storageClass",
-		"value: local-path",
-		"path: storageClass",
-		"path: auth.allowedGroups",
-		"value: []",
-	} {
-		if !strings.Contains(profile, required) {
-			t.Errorf("local bundle profile is missing %q", required)
+func TestCanonicalBundleUsesPublishedInfrastructureAndDevApplication(t *testing.T) {
+	bundle := string(mustReadFile(t, "bundle/uds-bundle.yaml"))
+	for _, forbidden := range []string{"path: ../kubevirt", "path: ../cdi", "bundle/local", "kubernetes.azure.com/agentpool"} {
+		if strings.Contains(bundle, forbidden) {
+			t.Fatalf("canonical bundle contains forbidden local or environment-specific value %q", forbidden)
 		}
 	}
-	for _, forbidden := range []string{
-		"kubernetes.azure.com/agentpool",
-		"managed-csi-premium",
-		"/UDS Labs/Pilot",
+	for _, required := range []string{
+		"repository: ghcr.io/uds-packages/kubevirt",
+		"repository: ghcr.io/uds-packages/cdi",
+		"path: ../packages/vm-images",
+		"path: ../",
+		"ref: dev",
 	} {
-		if strings.Contains(profile, forbidden) {
-			t.Errorf("local bundle profile contains environment-specific value %q", forbidden)
+		if !strings.Contains(bundle, required) {
+			t.Fatalf("canonical bundle is missing %q", required)
 		}
 	}
 
 	tasks := allTaskContents(t)
+	for _, forbidden := range []string{"BUNDLE_PROFILE", "bundle/local", "PROVIDER=pod", "PROVIDER: kubevirt"} {
+		if strings.Contains(tasks, forbidden) {
+			t.Errorf("tasks contain removed bundle/provider behavior %q", forbidden)
+		}
+	}
 	for _, required := range []string{
 		"name: deploy-local-uds-core",
-		"ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream",
-		"ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream",
-		"uds zarf package deploy",
-		"bundle/local/core-base-values.yaml",
-		"bundle/local/core-identity-values.yaml",
+		"bundle/core-base-values.yaml",
+		"bundle/core-identity-values.yaml",
 		"name: local-e2e",
-		"BUNDLE_PROFILE: local",
-		"task: access:patch-coredns",
-		"task: access:start-proxy",
-		"task: access:create-test-user",
+		"task: access:test-session-lifecycle",
 	} {
 		if !strings.Contains(tasks, required) {
 			t.Errorf("local E2E tasks are missing %q", required)
 		}
 	}
-	if strings.Contains(tasks, "k3d-core-slim-dev") {
-		t.Error("bare-k3s local E2E must not reference the k3d UDS Core bundle")
-	}
 
-	baseValues := string(mustReadFile(t, "bundle/local/core-base-values.yaml"))
-	identityValues := string(mustReadFile(t, "bundle/local/core-identity-values.yaml"))
+	baseValues := string(mustReadFile(t, "bundle/core-base-values.yaml"))
+	identityValues := string(mustReadFile(t, "bundle/core-identity-values.yaml"))
 	for _, required := range []string{"istio-controlplane:", "pepr-uds-core:"} {
 		if !strings.Contains(baseValues, required) {
 			t.Errorf("local UDS Core base values are missing %q", required)
@@ -503,6 +497,31 @@ func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *test
 	}
 }
 
+func TestRootTaskContractMatchesUDSPackageConventions(t *testing.T) {
+	var config taskConfig
+	readYAML(t, "tasks.yaml", &config)
+	definitions := map[string]*taskDefinition{}
+	for i := range config.Tasks {
+		definitions[config.Tasks[i].Name] = &config.Tasks[i]
+	}
+	for _, required := range []string{
+		"default",
+		"create-dev-package",
+		"create-deploy-test-bundle",
+		"dev",
+		"test-install",
+		"test-upgrade",
+		"publish-package",
+	} {
+		if definitions[required] == nil {
+			t.Fatalf("root task contract is missing %q", required)
+		}
+	}
+	if definitions["dev"].Actions[0].Task != "test:dev" {
+		t.Fatalf("root dev task = %q, want test:dev", definitions["dev"].Actions[0].Task)
+	}
+}
+
 func TestLintCompatibilityTaskRemainsDirectlyRunnable(t *testing.T) {
 	lint := taskDefinitions(t)["lint"]
 	if lint == nil || len(lint.Actions) != 1 || lint.Actions[0].Cmd != "golangci-lint run ./..." {
@@ -572,14 +591,14 @@ func TestApplicationImageAndVersionsStayConsistent(t *testing.T) {
 		if strings.HasSuffix(values.Image, ":latest") {
 			t.Fatal("application image must use an immutable version tag")
 		}
-		if !strings.HasSuffix(values.Image, ":"+pkg.Metadata.Version) {
-			t.Fatalf("application image %q must be tagged with package version %q", values.Image, pkg.Metadata.Version)
-		}
-		if chart.Version != pkg.Metadata.Version || chart.AppVersion != pkg.Metadata.Version {
-			t.Fatalf("package version %q, chart version %q, and appVersion %q must match", pkg.Metadata.Version, chart.Version, chart.AppVersion)
+		if pkg.Metadata.Version != "dev" {
+			t.Fatalf("development package metadata version = %q, want dev", pkg.Metadata.Version)
 		}
 		if len(component.Charts) != 1 || component.Charts[0].Version != chart.Version {
-			t.Fatal("Zarf chart version must match chart/Chart.yaml")
+			t.Fatalf("Zarf chart version %q must match chart/Chart.yaml version %q", component.Charts[0].Version, chart.Version)
+		}
+		if chart.AppVersion == "" {
+			t.Fatal("chart appVersion must be set")
 		}
 		return
 	}

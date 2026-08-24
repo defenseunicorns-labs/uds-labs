@@ -6,7 +6,7 @@
 ---
 
 includes:
-  - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
+  - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/setup.yaml
 
 tasks:
   - name: patch-demo-routes
@@ -178,22 +178,94 @@ tasks:
           NAME="${{ .inputs.name }}"
           [ -n "$NAME" ] || NAME="test-s$(date -u +%s)"
           EXPIRES_AT=$(date -u -d "+${{ .inputs.ttl_minutes }} minutes" +%Y-%m-%dT%H:%M:%SZ)
-          cat <<EOF | kubectl apply -f -
-          apiVersion: labs.uds.dev/v1alpha1
-          kind: LabSession
-          metadata:
-            name: ${NAME}
-            namespace: ${{ .inputs.namespace }}
-          spec:
-            sessionID: ${NAME}
-            scenarioID: ${{ .inputs.scenario_id }}
-            clientID: ${{ .inputs.client_id }}
-            expiresAt: "${EXPIRES_AT}"
-            size: small
-          EOF
+          printf '%s\n' \
+            'apiVersion: labs.uds.dev/v1alpha1' \
+            'kind: LabSession' \
+            'metadata:' \
+            "  name: ${NAME}" \
+            "  namespace: ${{ .inputs.namespace }}" \
+            'spec:' \
+            "  sessionID: ${NAME}" \
+            "  scenarioID: ${{ .inputs.scenario_id }}" \
+            "  clientID: ${{ .inputs.client_id }}" \
+            "  expiresAt: \"${EXPIRES_AT}\"" \
+            '  size: small' \
+            | kubectl apply -f -
+
+  - name: test-session-lifecycle
+    description: Create, observe, and delete a KubeVirt-backed LabSession
+    inputs:
+      namespace:
+        description: Namespace for the LabSession and VMI
+        default: uds-labs-vms
+      name:
+        description: Stable test session name
+        default: e2e-test
+      scenario_id:
+        description: Scenario identifier to launch
+        default: playground-tools
+    actions:
+      - task: create-test-session
+        with:
+          namespace: ${{ .inputs.namespace }}
+          scenario_id: ${{ .inputs.scenario_id }}
+          client_id: e2e-test
+          ttl_minutes: "30"
+          name: ${{ .inputs.name }}
+      - description: Wait for the LabSession and VMI to become ready
+        maxTotalSeconds: 1800
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          NS="${{ .inputs.namespace }}"
+          NAME="${{ .inputs.name }}"
+          VMI="lab-${NAME:0:8}"
+          cleanup() {
+            kubectl delete labsession "$NAME" -n "$NS" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+            kubectl wait vmi "$VMI" -n "$NS" --for=delete --timeout=300s >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          DEADLINE=$(( $(date +%s) + 1500 ))
+          while true; do
+            PHASE=$(kubectl get labsession "$NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            case "$PHASE" in
+              Ready)
+                echo "LabSession/$NAME is Ready"
+                break
+                ;;
+              Failed)
+                kubectl get labsession "$NAME" -n "$NS" -o yaml >&2 || true
+                exit 1
+                ;;
+              *)
+                echo "LabSession/$NAME phase: ${PHASE:-Pending}"
+                ;;
+            esac
+            [ "$(date +%s)" -lt "$DEADLINE" ] || {
+              kubectl get labsession "$NAME" -n "$NS" -o yaml >&2 || true
+              kubectl get vmi "$VMI" -n "$NS" -o yaml >&2 || true
+              exit 1
+            }
+            sleep 10
+          done
+          kubectl wait vmi "$VMI" -n "$NS" --for=condition=Ready --timeout=300s
+          trap - EXIT
+      - description: Delete the test LabSession and wait for the VMI cleanup
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          NS="${{ .inputs.namespace }}"
+          NAME="${{ .inputs.name }}"
+          VMI="lab-${NAME:0:8}"
+          kubectl delete labsession "$NAME" -n "$NS" --wait=false
+          kubectl wait vmi "$VMI" -n "$NS" --for=delete --timeout=300s
 
   - name: create-test-user
-    description: Create test Keycloak user (doug@uds.dev / unicorn123!@#UN) in /UDS Core/Admin
+    description: Create test Keycloak user (documented local test user) in /UDS Core/Admin
     actions:
       - task: uds-setup:keycloak-user
         with:
@@ -221,33 +293,33 @@ tasks:
           fi
           echo "Admin: $ADMIN_IP  Tenant: $TENANT_IP"
           mkdir -p hack/proxy
-          cat > hack/proxy/nginx.conf <<EOF
-          worker_processes 1;
-          events { worker_connections 1024; }
-
-          stream {
-              map \$ssl_preread_server_name \$backend_443 {
-                  ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:443;
-                  default              ${TENANT_IP}:443;
-              }
-
-              map \$ssl_preread_server_name \$backend_80 {
-                  ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:80;
-                  default              ${TENANT_IP}:80;
-              }
-
-              server {
-                  listen 443;
-                  proxy_pass \$backend_443;
-                  ssl_preread on;
-              }
-
-              server {
-                  listen 80;
-                  proxy_pass \$backend_80;
-              }
-          }
-          EOF
+          printf '%s\n' \
+            'worker_processes 1;' \
+            'events { worker_connections 1024; }' \
+            '' \
+            'stream {' \
+            '    map $ssl_preread_server_name $backend_443 {' \
+            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:443;" \
+            "        default              ${TENANT_IP}:443;" \
+            '    }' \
+            '' \
+            '    map $ssl_preread_server_name $backend_80 {' \
+            "        ~*\\.admin\\.uds\\.dev  ${ADMIN_IP}:80;" \
+            "        default              ${TENANT_IP}:80;" \
+            '    }' \
+            '' \
+            '    server {' \
+            '        listen 443;' \
+            '        proxy_pass $backend_443;' \
+            '        ssl_preread on;' \
+            '    }' \
+            '' \
+            '    server {' \
+            '        listen 80;' \
+            '        proxy_pass $backend_80;' \
+            '    }' \
+            '}' \
+            > hack/proxy/nginx.conf
           docker compose -f hack/proxy/docker-compose.yaml up -d
 
   - name: stop-proxy

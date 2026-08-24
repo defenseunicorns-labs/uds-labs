@@ -54,7 +54,9 @@ retaining that Session PVC; resume reattaches the same disk.
 
 ## Releases
 
-Releases follow the standard UDS Package Kit flow:
+Releases follow the standard UDS Package Kit flow. Source package metadata and
+bundle references use `dev`; the Helm chart and VM-image package retain their
+own version contracts.
 
 1. Update the `upstream` version in [`releaser.yaml`](./releaser.yaml) through a pull request.
 2. Merging to `master` runs [`release.yaml`](./.github/workflows/release.yaml).
@@ -63,18 +65,19 @@ Releases follow the standard UDS Package Kit flow:
 
 The package is published at `ghcr.io/defenseunicorns-labs/uds/uds-labs` with an
 `-upstream` tag. In parallel, [`udm-release.yaml`](./.github/workflows/udm-release.yaml)
-runs the UDM compliance pipeline and publishes the vouched package to
-`registry.uds-mil.us/defenseunicorns`. It uses the repository's `REGISTRY_USER_ID` and
-`REGISTRY_PASSWORD` secrets. VM-image package publication remains a separate
-infrastructure artifact because it requires the Packer/KVM build environment.
+runs the UDM Common onboarding/compliance pipeline for UDS Proving Ground and
+publishes the vouched package to `registry.uds-mil.us/defenseunicorns`. It uses
+the repository's registry credentials. VM-image package publication remains a
+separate infrastructure artifact because it requires the Packer/KVM build
+environment.
 
 ## Quick Start
 
 ### Full local E2E from scratch
 
-The local profile at [`bundle/local/uds-bundle.yaml`](bundle/local/uds-bundle.yaml)
-uses empty placement, the k3s `local-path` StorageClass, the `uds.dev` domain,
-and authentication without an environment-specific group requirement.
+The canonical bundle at [`bundle/uds-bundle.yaml`](bundle/uds-bundle.yaml)
+uses published KubeVirt and CDI packages with portable placement defaults. The
+ignored `bundle/uds-config.yaml` supplies environment-specific deployment values.
 
 ```bash
 # sudo is needed for k3s uninstall/install
@@ -82,18 +85,21 @@ sudo -v
 uds run local-e2e
 ```
 
-`uds run dev` is a backward-compatible alias for the same flow. It:
+`uds run local-e2e` performs the full KubeVirt flow:
 
 1. Wipes and recreates bare k3s by default.
 2. Installs MetalLB and initializes Zarf.
 3. Deploys the standalone UDS Core 1.10.0 base and identity Zarf packages
-   directly onto bare k3s; no k3d bundle is used.
-4. Pulls the published KubeVirt and CDI packages.
+   directly onto bare k3s.
+4. Deploys the canonical bundle using published KubeVirt and CDI packages.
 5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
-6. Builds and deploys the local UDS Labs bundle.
-7. Restores demo-route auth exemptions after Package reconciliation.
-8. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
-9. Runs infrastructure and demo-route policy smoke tests.
+6. Restores demo-route auth exemptions after Package reconciliation.
+7. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
+8. Runs infrastructure, demo-route, and LabSession lifecycle smoke tests.
+
+For the standard k3d package-development loop, use `uds run dev`. It validates
+package installation and upgrades with the KubeVirt operator disabled because
+k3d does not provide the KubeVirt/CDI APIs.
 
 After completion:
 
@@ -130,8 +136,8 @@ uds run local-e2e --with WIPE_CLUSTER=0
 uds run redeploy
 ```
 
-With `WIPE_CLUSTER=0`, k3s and UDS Core are preserved. `redeploy` defaults to the
-local bundle profile and rebuilds only the application/package stack.
+With `WIPE_CLUSTER=0`, k3s and UDS Core are preserved. `redeploy` uses the
+canonical bundle and rebuilds only the application/package stack.
 
 ## VM Images (Packer)
 
@@ -184,7 +190,7 @@ uds run redeploy                           # fastest deployed-code iteration
 uds run smoke-test
 ```
 
-> **Warning:** `uds run dev` and `uds run cluster-up` default to
+> **Warning:** `uds run local-e2e` and `uds run cluster-up` default to
 > `WIPE_CLUSTER=1` and uninstall an existing k3s cluster.
 
 For a clean cluster rebuild that reuses existing local qcow2 images, follow the
@@ -357,7 +363,8 @@ scenarios/      # lab scenario definitions
 
 The default deployment bundle consumes the published KubeVirt and CDI UDS packages. It uses an
 ignored environment configuration copied from `bundle/uds-config.example.yaml`.
-The committed `bundle/local/` profile is separate and needs no deployment config.
+The canonical bundle uses published infrastructure packages and an ignored
+environment-specific deployment config.
 Package tarballs and environment configuration remain ignored build artifacts.
 
 ### Iterating on the operator

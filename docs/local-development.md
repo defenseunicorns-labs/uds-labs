@@ -5,7 +5,7 @@ by this repository. Run commands from the repository root unless stated
 otherwise.
 
 > [!CAUTION]
-> `uds run dev` and `uds run cluster-up` default to `WIPE_CLUSTER=1`. They
+> `uds run local-e2e` and `uds run cluster-up` default to `WIPE_CLUSTER=1`. They
 > uninstall an existing k3s installation before rebuilding the development
 > cluster. Use `--with WIPE_CLUSTER=0` to preserve the current cluster.
 
@@ -22,17 +22,7 @@ The full end-to-end environment requires:
 - Packer 1.9 or newer, `qemu-img`, and `qemu-system-x86_64` when building VM
   images
 - Published KubeVirt UDS package access to `ghcr.io/uds-packages/kubevirt`
-- Placement-enabled CDI checkout: `~/src/github.com/uds-packages/containerized-data-importer`
-
-Override the CDI artifact when it lives elsewhere:
-
-```bash
-uds run preflight \
-  --with cdi_package=/path/to/zarf-package-cdi-amd64-dev-unicorn.tar.zst
-```
-
-The Unicorn CDI flavor also requires authentication to the Defense Unicorns
-Chainguard registry. The `upstream` flavor does not use that image source.
+- Published CDI UDS package access to `ghcr.io/uds-packages/cdi`
 
 ## Discover available tasks
 
@@ -62,39 +52,38 @@ unqualified task names as compatibility entrypoints.
 Pass task inputs with `--with`:
 
 ```bash
-uds run dev --with WIPE_CLUSTER=0 \
-  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-unicorn.tar.zst"
+uds run dev --no-progress
 ```
 
 Input names are case-sensitive.
 
 ## Full local E2E
 
-The committed [`bundle/local/uds-bundle.yaml`](../bundle/local/uds-bundle.yaml)
-profile is the supported bare-k3s profile. It uses empty Kubernetes placement,
-`local-path` storage, `uds.dev`, capacity one, and no environment-specific
-Keycloak group restriction.
+The canonical [`bundle/uds-bundle.yaml`](../bundle/uds-bundle.yaml) is the
+only bundle. It uses published KubeVirt and CDI packages with portable placement
+defaults. Customize the ignored `bundle/uds-config.yaml` for an environment.
 
 Refresh sudo credentials immediately before a full run:
 
 ```bash
 sudo -v
-uds run local-e2e \
-  --with CDI_PACKAGE="$HOME/src/github.com/uds-packages/containerized-data-importer/zarf-package-cdi-amd64-dev-upstream.tar.zst"
+uds run local-e2e
 ```
 
-`uds run dev` is an alias for `local-e2e`. The task performs these steps in
-order:
+`uds run local-e2e` performs these steps in order:
 
-1. Preflight checks for KVM, tools, and external package artifacts.
+1. Preflight checks for KVM, tools, and package configuration.
 2. Recreate bare k3s, install MetalLB, and initialize Zarf.
 3. Deploy the pinned standalone UDS Core 1.10.0 `core-base` and
-   `core-identity-authorization` Zarf packages directly. No k3d bundle or k3d
-   package is used; the identity package installs both Keycloak and authservice.
-4. Pull KubeVirt, stage CDI, and build the VM-image and UDS Labs packages.
-5. Build and deploy the local bundle profile.
+   `core-identity-authorization` Zarf packages directly.
+4. Use the canonical bundle with published KubeVirt and CDI packages.
+5. Reuse or build the VM-image and UDS Labs packages.
 6. Patch cluster DNS, start the local SNI proxy, and create the test user.
-7. Verify golden DataVolumes, the UDS Labs server, and authservice.
+7. Verify golden DataVolumes, the UDS Labs server, authservice, and a complete
+   LabSession lifecycle.
+
+`uds run dev` is the standard k3d package-development loop. It disables the
+KubeVirt-backed operator because k3d does not provide KubeVirt or CDI APIs.
 
 When complete:
 
@@ -143,7 +132,7 @@ docker info >/dev/null
 Rebuild packages and redeploy while preserving k3s:
 
 ```bash
-uds run dev --with WIPE_CLUSTER=0
+uds run local-e2e --with WIPE_CLUSTER=0
 ```
 
 For the fastest server or operator iteration, rebuild only the application
@@ -166,13 +155,13 @@ Build both qcow2 images, wrap them in local image-server containers, and embed
 them in the package:
 
 ```bash
-uds run dev --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
+uds run local-e2e --with BUILD_IMAGES=1 --with LOCAL_VM_IMAGES=1
 ```
 
 Reuse existing qcow2 files while rebuilding the package:
 
 ```bash
-uds run dev \
+uds run local-e2e \
   --with WIPE_CLUSTER=0 \
   --with BUILD_IMAGES=0 \
   --with LOCAL_VM_IMAGES=1
@@ -291,7 +280,7 @@ requires them.
 |---|---|---|
 | `clean-artifacts` | Removes built Zarf packages, bundles, image tarballs, and the Zarf temp cache | `clean=1`, `skip=0`; destructive |
 | `lint` | Runs `golangci-lint run ./...` | Requires `golangci-lint` |
-| `preflight` | Checks required tools, KVM, CDI package artifact, and package configuration | `cdi_package` |
+| `preflight` | Checks required tools, KVM, and package configuration | Full E2E prerequisites |
 | `validate-package-config` | Checks VM image-server and CDI import contracts | No cluster required |
 | `dry-run` | Runs tests and renders Helm and Zarf packages | No cluster required |
 
@@ -306,7 +295,7 @@ requires them.
 | `push-image` | Pushes the uds-labs image to GHCR | Requires registry write access |
 | `build-lab-package` | Builds the UDS Labs server/operator Zarf package | none |
 | `build-vm-images-package` | Reuses/pulls a versioned VM-image package or builds one locally | `local`, `repository` |
-| `build-bundle` | Creates the selected UDS bundle | `profile=default\|local`; requires dependency packages |
+| `build-bundle` | Creates the canonical UDS bundle | Requires repository-owned package artifacts and published KubeVirt/CDI packages |
 
 ### Cluster infrastructure
 
@@ -326,26 +315,26 @@ requires them.
 
 | Task | What it does | Important inputs or notes |
 |---|---|---|
-| `deploy-bundle` | Deploys the newest selected-profile bundle | `profile=default\|local`; run `build-bundle` first |
+| `deploy-bundle` | Deploys the newest canonical bundle | `config`; run `build-bundle` first |
 | `patch-demo-routes` | Restores unauthenticated demo-route exemptions | Called by `deploy-stack`; rerun after direct Package CR changes |
 | `patch-coredns` | Maps UDS hostnames to MetalLB gateways and restarts authservice | Existing deployed cluster required |
 | `create-test-session` | Creates a LabSession for operator lifecycle checks | `namespace`, `scenario_id`, `client_id`, `ttl_minutes`, `name` |
 | `create-test-user` | Creates the documented Keycloak test user | Calls shared `uds-setup:keycloak-user` |
+| `test-session-lifecycle` | Creates, waits for, and deletes a KubeVirt-backed LabSession | Full KubeVirt E2E only |
 | `start-proxy` | Starts the local nginx SNI proxy on ports 80 and 443 | Requires gateway LoadBalancer IPs |
 | `stop-proxy` | Stops the local nginx SNI proxy | Uses Docker Compose |
-| `redeploy` | Rebuilds and redeploys without rebuilding infrastructure packages | `BUNDLE_PROFILE=local`, `vm_image_tag` |
+| `redeploy` | Rebuilds and redeploys the canonical bundle without rebuilding infrastructure packages | `vm_image_tag` |
 | `smoke-test` | Checks golden PVCs, app pod, authservice, and demo-route policy exemptions | Returns nonzero on failure |
 | `local-e2e` | Runs the supported bare-k3s end-to-end workflow | Defaults to `WIPE_CLUSTER=1`; see inputs below |
-| `dev` | Backward-compatible alias for `local-e2e` | Same inputs as `local-e2e` |
+| `dev` | Creates and deploys the package on k3d | Package-only checks; operator disabled |
 
 ### Composite task inputs
 
-`local-e2e` and `dev` accept:
+`local-e2e` accepts:
 
 | Input | Default | Effect |
 |---|---:|---|
 | `WIPE_CLUSTER` | `1` | Recreate k3s and UDS Core; use `0` to preserve them |
-| `CDI_PACKAGE` | external upstream artifact | Select the prebuilt CDI package |
 | `UDS_CORE_BASE_PACKAGE` | UDS Core `core-base:1.10.0-upstream` | Standalone base package for bare k3s |
 | `UDS_CORE_IDENTITY_PACKAGE` | UDS Core `core-identity-authorization:1.10.0-upstream` | Standalone Keycloak and authservice package for bare k3s |
 | `BUILD_IMAGES` | `0` | Build local qcow2 images |
@@ -385,11 +374,11 @@ These shared tasks can change when their pinned include versions change.
 
 ### The existing cluster disappeared
 
-`dev` and `cluster-up` use `WIPE_CLUSTER=1` by default. Preserve an existing
+`local-e2e` and `cluster-up` use `WIPE_CLUSTER=1` by default. Preserve an existing
 cluster with:
 
 ```bash
-uds run dev --with WIPE_CLUSTER=0
+uds run local-e2e --with WIPE_CLUSTER=0
 ```
 
 ### Sudo expires during cluster setup

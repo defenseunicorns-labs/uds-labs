@@ -25,7 +25,7 @@ tasks:
           echo "Cleaning build artifacts..."
           rm -f zarf-package-*.tar.zst lab-server.tar uds-labs-*.tar
           rm -f packages/vm-images/base.tar packages/vm-images/uds-core.tar
-          rm -f bundle/uds-bundle-*.tar.zst bundle/local/uds-bundle-*.tar.zst
+          rm -f bundle/uds-bundle-*.tar.zst
           rm -rf ~/.cache/zarf-tmp
           echo "Done."
 
@@ -99,15 +99,19 @@ tasks:
         cmd: |
           # shellcheck shell=bash
           set -euo pipefail
-          GOCACHE=/tmp/uds-labs-go-cache go test . -run 'TestHelmChart|TestVMImage|TestDevelopmentBundle|TestLocalE2E|TestApplicationImage'
+          GOCACHE=/tmp/uds-labs-go-cache go test . -run 'TestHelmChart|TestVMImage|TestCanonicalBundle|TestLocalE2E|TestApplicationImage'
           helm lint chart
           helm lint packages/vm-images/chart
           helm template uds-labs chart \
             --namespace uds-labs \
             --set domain=example.test \
-            --set provider=kubevirt \
             >/dev/null
-          uds inspect bundle/local/uds-bundle.yaml --no-progress --no-color >/dev/null
+          if find . -maxdepth 1 -type f -name 'zarf-package-uds-labs-*-dev*.tar.zst' -print -quit | grep -q .; then
+            uds inspect bundle/uds-bundle.yaml --no-progress --no-color >/dev/null
+          else
+            echo "Skipping resolved bundle inspection; no local uds-labs package artifact exists"
+            test "$(uds zarf tools yq '.kind' bundle/uds-bundle.yaml)" = "UDSBundle"
+          fi
       - description: Lint and render Zarf package definitions
         shell:
           linux: bash
@@ -118,5 +122,4 @@ tasks:
           uds zarf dev lint .
           uds zarf dev inspect manifests . \
             --deploy-set-variables DOMAIN=example.test \
-            --deploy-set-variables PROVIDER=kubevirt \
             >/dev/null
