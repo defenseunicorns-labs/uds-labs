@@ -8,19 +8,19 @@ includes:
   - build: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/build.yaml
   - olm: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/olm.yaml
   # CAT/Witness tasks remain sourced from udm-common. Keep its publish
-  # namespace separate from uds-common because this package has both release
-  # destinations.
+  # namespace explicit so the standard uds-common publish namespace remains
+  # available for the reusable release workflow.
   - scan: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/scan.yaml
   - setup: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/setup.yaml
   - vouch: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/vouch.yaml
-  - publish: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/publish.yaml
+  - udm-publish-tasks: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/publish.yaml
   - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
   - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/create.yaml
   - pull: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/pull.yaml
   - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/deploy.yaml
   - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/actions.yaml
   - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/upgrade.yaml
-  - uds-publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
+  - publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
   - quality: tasks/quality.yaml
   - test: tasks/test.yaml
   - images: tasks/images.yaml
@@ -577,7 +577,7 @@ tasks:
           test_directory: ""
 
       - description: Publish the package to GHCR using the standard UDS package task
-        task: uds-publish:package
+        task: publish:package
         with:
           team: uds
 
@@ -655,7 +655,7 @@ tasks:
           test_directory: ""
 
       - description: Publish the vouched package to the UDS Army registry
-        task: publish:zarf-package
+        task: udm-publish-tasks:zarf-package
         with:
           registry: ${{ .inputs.registry }}
           registry_org: ${{ .inputs.registry_org }}
