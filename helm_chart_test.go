@@ -151,7 +151,8 @@ func TestHelmChart_KubeVirtProviderExemptsCDIClonePodsFromIstioOverridePolicy(t 
 }
 
 func TestHelmChart_OperatorCanBeDisabledForPackageOnlyTests(t *testing.T) {
-	out := helmTemplate(t, "--set", "operator.enabled=false")
+	// Zarf chart variables arrive as strings; preserve that package-level path here.
+	out := helmTemplate(t, "--set-string", "operator.enabled=false")
 	if strings.Contains(out, "name: lab-operator") {
 		t.Fatal("disabled operator unexpectedly rendered the operator Deployment")
 	}

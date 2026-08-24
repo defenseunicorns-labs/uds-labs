@@ -53,7 +53,18 @@
       ],
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          ]
         }
       }
     },
