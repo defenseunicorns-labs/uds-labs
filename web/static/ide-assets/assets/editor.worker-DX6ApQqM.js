@@ -1,3 +1,8 @@
+/**
+ * Copyright 2026 Defense Unicorns
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+ */
+
 (function(){"use strict";var qs,Us,$s,Hs;class Ws{constructor(){this.listeners=[],this.unexpectedErrorHandler=function(t){setTimeout(()=>{throw t.stack?Pe.isErrorNoTelemetry(t)?new Pe(t.message+`
 
 `+t.stack):new Error(t.message+`

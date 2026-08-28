@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 // Package v1alpha1 defines the LabSession custom resource (ADR-0011).
 //
 // LabSession is the lifecycle handle the thin platform server creates and the

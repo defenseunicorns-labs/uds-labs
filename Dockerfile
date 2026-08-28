@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 FROM node:20-alpine AS ide-build
 WORKDIR /app/web/ide-src
 COPY web/ide-src/package*.json ./

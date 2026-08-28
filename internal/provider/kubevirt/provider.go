@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 // Package kubevirt implements provider.Provider on top of KubeVirt VMIs and CDI
 // DataVolumes (ADR-0010/0012). One LabSession reconciles to: a DataVolume cloned
 // from the scenario's OCI image, a VirtualMachineInstance, a headless Service

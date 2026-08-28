@@ -1,13 +1,17 @@
 # Copyright 2026 Defense Unicorns
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
-name: UDM Release
+name: UDS Proving Ground Release
 
 on:
   push:
     branches:
       - master
   workflow_dispatch:
+
+concurrency:
+  group: proving-ground-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -26,7 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install UDS CLI
-        uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9aaad66b21c7637b5be3d6aafdb21c9e7ff1df2a # v0.10.3
+        uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9238b820485411b19d3511a749cd1482afba4302 # v0.13.4
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -44,22 +48,26 @@ jobs:
       - name: Install UDS Package Kit
         env:
           UDS_PK_VERSION: v0.1.12
+          UDS_PK_SHA256_AMD64: 859f2d2ed0928a406039fbbe55abaa6610416984d73014378c81fdb9ad29d298
         run: |
           set -euo pipefail
           ARCH="$(uname -m)"
           case "$ARCH" in
             x86_64) ARCH=amd64 ;;
-            aarch64) ARCH=arm64 ;;
+            aarch64) echo "UDS Package Kit checksum is not configured for arm64" >&2; exit 1 ;;
             *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
           esac
-          curl -fsSL -o /usr/local/bin/uds-pk \
-            "https://github.com/defenseunicorns/uds-pk/releases/download/${UDS_PK_VERSION}/uds-pk_${UDS_PK_VERSION}_$(uname -s)_${ARCH}"
-          chmod +x /usr/local/bin/uds-pk
+          TMP="$(mktemp)"
+          trap 'rm -f "$TMP"' EXIT
+          URL="https://github.com/defenseunicorns/uds-pk/releases/download/${UDS_PK_VERSION}/uds-pk_${UDS_PK_VERSION}_$(uname -s)_${ARCH}"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$TMP" "$URL"
+          printf '%s  %s\n' "$UDS_PK_SHA256_AMD64" "$TMP" | sha256sum --check --status
+          install -m 0755 "$TMP" /usr/local/bin/uds-pk
 
       - name: Apply the existing UDS release version
         run: uds-pk release update-yaml upstream
 
-      - name: Attest, vouch, and publish to registry.uds-mil.us
+      - name: Onboard and publish to UDS Proving Ground
         run: |
           uds run udm-publish --no-progress \
             --with github_token="${{ secrets.GITHUB_TOKEN }}" \

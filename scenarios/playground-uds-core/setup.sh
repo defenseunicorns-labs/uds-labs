@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Start k3d cluster (stopped cleanly in snapshot), mark ready once cluster
 # is up, then wait for pods in background.
 set -euo pipefail

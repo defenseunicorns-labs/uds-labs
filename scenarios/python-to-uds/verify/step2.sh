@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Pass when the Helm chart exists and templates render a Deployment and Service.
 export HOME=/root
 [[ -f /root/myapp/chart/Chart.yaml ]] || exit 1
