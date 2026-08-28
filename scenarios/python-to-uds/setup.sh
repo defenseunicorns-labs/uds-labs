@@ -1,7 +1,4 @@
 #!/bin/bash
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 # Setup for the Python-to-UDS scenario.
 # The k3d cluster (uds) with UDS Core is already created from the playground snapshot.
 # This script starts the cluster, scaffolds /root/myapp synchronously (so files are

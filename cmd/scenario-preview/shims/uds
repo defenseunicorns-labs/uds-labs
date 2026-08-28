@@ -1,0 +1,41 @@
+#!/bin/sh
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+set -eu
+
+if [ "$1" = "zarf" ] && [ "${2:-}" = "tools" ] && [ "${3:-}" = "kubectl" ]; then
+  shift 3
+  exec kubectl "$@"
+fi
+
+if [ "$1" = "zarf" ] && [ "${2:-}" = "tools" ] && [ "${3:-}" = "helm" ] && [ "${4:-}" = "template" ]; then
+  if [ -f "${PREVIEW_WORKSPACE}/chart/templates/deployment.yaml" ] && [ -f "${PREVIEW_WORKSPACE}/chart/templates/service.yaml" ]; then
+    cat "${PREVIEW_WORKSPACE}/chart/templates/deployment.yaml" "${PREVIEW_WORKSPACE}/chart/templates/service.yaml"
+    exit 0
+  fi
+  echo "Error: chart requires deployment.yaml and service.yaml" >&2
+  exit 1
+fi
+
+if [ "$1" = "run" ] && [ "${2:-}" = "dev" ]; then
+  scenario-preview verify --scenario "$SCENARIO_ID" --workspace "$PREVIEW_WORKSPACE"
+  touch "$PREVIEW_WORKSPACE/zarf-package-myapp-amd64-dev.tar.zst"
+  touch "$PREVIEW_WORKSPACE/uds-bundle-myapp-bundle-amd64-dev.tar.zst"
+  mkdir -p "$PREVIEW_WORKSPACE/.scenario-preview"
+  touch "$PREVIEW_WORKSPACE/.scenario-preview/deployed"
+  cat <<'EOF'
+[preview] Creating Zarf package myapp:dev
+[preview] Creating UDS bundle myapp-bundle
+[preview] Deploying bundle to simulated UDS Core
+package.uds.dev/myapp configured
+EOF
+  exit 0
+fi
+
+if [ "$1" = "run" ] && [ "${2:-}" = "setup:keycloak-user" ]; then
+  echo "[preview] Created simulated Keycloak user doug@uds.dev."
+  exit 0
+fi
+
+echo "[preview] Simulated UDS command: uds $*"

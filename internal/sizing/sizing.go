@@ -1,6 +1,3 @@
-// Copyright 2026 Defense Unicorns
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 // Package sizing defines the abstract, provider-agnostic VM size tiers used by
 // scenarios (ADR-0013). A scenario declares an abstract size (small|medium|large);
 // the operator maps that tier to provider-specific resources (KubeVirt

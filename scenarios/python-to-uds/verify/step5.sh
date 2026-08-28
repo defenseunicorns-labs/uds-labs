@@ -1,7 +1,4 @@
 #!/bin/bash
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 # Pass when the bundle and tasks files exist with correct content.
 [[ -f /root/myapp/bundle/uds-bundle.yaml ]] || exit 1
 [[ -f /root/myapp/tasks.yaml ]] || exit 1

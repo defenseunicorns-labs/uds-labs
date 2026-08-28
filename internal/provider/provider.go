@@ -1,6 +1,3 @@
-// Copyright 2026 Defense Unicorns
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 // Package provider defines the VM backend abstraction the Lab Operator
 // reconciles through (ADR-0011). KubeVirt on AKS is the planned implementation;
 // the lifecycle interface keeps its orchestration independent from KubeVirt API
