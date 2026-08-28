@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 title: "Package a Stateless App for UDS"
 description: "Turn a pre-containerized Python application into a UDS package by adding its Helm chart, UDS Package CR, Zarf definition, bundle, and development tasks."
 outcome: "Build and deploy a stateless application package to a live UDS Core cluster."

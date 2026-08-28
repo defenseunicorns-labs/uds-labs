@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Pass when postgres-operator is NOT declared in zarf.yaml (user has confirmed correct structure).
 # Grep returns exit 0 if found — invert with !
 export HOME=/root

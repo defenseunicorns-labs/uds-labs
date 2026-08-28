@@ -1,3 +1,8 @@
+/**
+ * Copyright 2026 Defense Unicorns
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+ */
+
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import YamlWorker from 'monaco-yaml/yaml.worker?worker'
 import * as monaco from 'monaco-editor'

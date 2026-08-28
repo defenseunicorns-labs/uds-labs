@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Pass when the Package CR phase is Ready.
 export HOME=/root
 export KUBECONFIG=/root/.kube/config

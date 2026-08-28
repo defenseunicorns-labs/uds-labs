@@ -1,3 +1,8 @@
+/**
+ * Copyright 2026 Defense Unicorns
+ * SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+ */
+
 var IM=Object.defineProperty;var xv=Ge=>{throw TypeError(Ge)};var OM=(Ge,Ke,nt)=>Ke in Ge?IM(Ge,Ke,{enumerable:!0,configurable:!0,writable:!0,value:nt}):Ge[Ke]=nt;var vt=(Ge,Ke,nt)=>OM(Ge,typeof Ke!="symbol"?Ke+"":Ke,nt),td=(Ge,Ke,nt)=>Ke.has(Ge)||xv("Cannot "+nt);var ln=(Ge,Ke,nt)=>(td(Ge,Ke,"read from private field"),nt?nt.call(Ge):Ke.get(Ge)),ci=(Ge,Ke,nt)=>Ke.has(Ge)?xv("Cannot add the same private member more than once"):Ke instanceof WeakSet?Ke.add(Ge):Ke.set(Ge,nt),Rl=(Ge,Ke,nt,Co)=>(td(Ge,Ke,"write to private field"),Co?Co.call(Ge,nt):Ke.set(Ge,nt),nt),Kn=(Ge,Ke,nt)=>(td(Ge,Ke,"access private method"),nt);(function(){"use strict";var bv,Ev,vv,Fv,zt,Be,ui,So,ws,ad,ud,Av,Mn,$l,$v,Sv,Gr,ld,Ul,Cv;class Ge{constructor(){this.listeners=[],this.unexpectedErrorHandler=function(t){setTimeout(()=>{throw t.stack?hi.isErrorNoTelemetry(t)?new hi(t.message+`
 
 `+t.stack):new Error(t.message+`

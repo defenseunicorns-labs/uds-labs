@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 title: "UDS Core Playground"
 description: "Pre-deployed k3d-core-slim-dev cluster. UDS Core, Keycloak, and Istio are running — dive straight in."
 outcome: "Inspect and experiment with a running UDS Core cluster."

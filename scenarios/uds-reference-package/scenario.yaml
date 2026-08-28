@@ -1,3 +1,6 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 title: "Explore UDS Package Structure"
 description: "Explore and deploy the maintained UDS Reference Package to see how Zarf packaging, bundle dependencies, networking, SSO, Postgres, and monitoring fit together."
 outcome: "Explain the boundary between an application package, its deployment bundle, and UDS Core integrations."

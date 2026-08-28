@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 // Package cloudinit renders the VM bootstrap user-data for a scenario.
 //
 // The template powers the KubeVirt cloudInitNoCloud volume — it embeds the

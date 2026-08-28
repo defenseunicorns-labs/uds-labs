@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 // Command laboperator is the Lab Operator (ADR-0011): it watches LabSession
 // objects and reconciles each into a provider VM (KubeVirt VMI), Service, and
 // NetworkPolicy, enforces TTL, and reports readiness. It holds no in-memory

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Builds the UDS Core playground image. Deploys k3d-core-slim-dev, waits
 # for all pods to be ready, then stops the cluster cleanly before snapshot.
 # On boot, setup.sh runs k3d cluster start for clean ordered startup.

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Builds the UDS Labs base image. Installs all static dependencies so
 # user-data only needs to write scenario files and start services.
 set -euo pipefail

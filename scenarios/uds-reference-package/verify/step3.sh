@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Pass when the UDS Package CR template exists and declares SSO and network expose.
 export HOME=/root
 CR=/root/reference-package/chart/templates/uds-package.yaml
