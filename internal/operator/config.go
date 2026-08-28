@@ -1,3 +1,6 @@
+// Copyright 2026 Defense Unicorns
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 // Package operator holds wiring for the Lab Operator binary: configuration
 // loaded from the operator ConfigMap (ADR-0013) — size tiers and image refs.
 package operator
@@ -17,7 +20,6 @@ import (
 // It maps abstract sizes to resources and image tiers to golden PVC names.
 // Golden PVCs are pre-populated qcow2 disks; CDI clones one per session.
 type Config struct {
-	Provider           string               `yaml:"provider"`
 	Sizes              map[string]sizeEntry `yaml:"sizes"`
 	GoldenPVCs         map[string]string    `yaml:"goldenPVCs"`         // tier → PVC name
 	GoldenPVCNamespace string               `yaml:"goldenPVCNamespace"` // defaults to VM namespace

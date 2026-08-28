@@ -1,0 +1,10 @@
+#!/bin/sh
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+if [ "${1:-}" = "image" ] && [ "${2:-}" = "ls" ]; then
+  printf 'REPOSITORY   TAG   IMAGE ID       CREATED          SIZE\nmyapp        dev   preview-image  1 minute ago     52MB\n'
+  exit 0
+fi
+
+echo "[preview] Simulated Docker command: docker $*"

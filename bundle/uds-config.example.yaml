@@ -1,7 +1,10 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
 # Copy this file to bundle/uds-config.yaml and customize it for the target
 # cluster. The destination is intentionally ignored by Git.
 shared:
-  domain: uds.run
+  domain: uds.dev
 
 variables:
   kubevirt:
@@ -22,6 +25,3 @@ variables:
     ALLOW_IMPORTER_EGRESS: true
     WORKLOAD_NAMESPACES:
       - uds-labs-vms
-
-  uds-labs:
-    PROVIDER: kubevirt

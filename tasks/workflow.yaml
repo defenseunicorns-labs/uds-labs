@@ -30,9 +30,6 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
-      BUNDLE_PROFILE:
-        description: Bundle profile to build and deploy (default or local)
-        default: default
     actions:
       - task: images:build-images
         with:
@@ -49,11 +46,7 @@ tasks:
         with:
           local: ${{ .inputs.LOCAL_VM_IMAGES }}
       - task: images:build-bundle
-        with:
-          profile: ${{ .inputs.BUNDLE_PROFILE }}
       - task: images:deploy-bundle
-        with:
-          profile: ${{ .inputs.BUNDLE_PROFILE }}
       - task: access:patch-demo-routes
       - task: cluster:wait-kubevirt
       - task: cluster:verify-cluster
@@ -98,21 +91,17 @@ tasks:
       vm_image_tag:
         description: VM image tag (defaults to package version)
         default: ""
-      BUNDLE_PROFILE:
-        description: Bundle profile to redeploy
-        default: local
     actions:
       - task: deploy-stack
         with:
           BUILD_IMAGES: "0"
           LOCAL_VM_IMAGES: "0"
           VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
-          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
       - task: smoke-test
 
   # ── Smoke test ───────────────────────────────────────────────────────────────
   # Run after every deploy to catch broken state before the user hits it.
-  # Exits non-zero on any failure so CI and uds run dev surface problems early.
+  # Exits non-zero on any failure so CI and uds run local-e2e surface problems early.
 
   - name: smoke-test
     description: Verify golden PVCs, platform, authservice, and demo-route authorization
@@ -268,11 +257,11 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          BUNDLE_PROFILE: local
       - task: access:patch-coredns
       - task: access:start-proxy
       - task: access:create-test-user
       - task: smoke-test
+      - task: access:test-session-lifecycle
       - description: Local E2E environment ready
         cmd: |
           echo ""
@@ -280,42 +269,3 @@ tasks:
           echo "  UI:       https://labs.uds.dev"
           echo "  User:     doug@uds.dev"
           echo "  Password: unicorn123!@#UN"
-
-  - name: dev
-    description: Backward-compatible alias for local-e2e
-    inputs:
-      WIPE_CLUSTER:
-        description: Wipe and reinstall k3s (1 = wipe)
-        default: "1"
-      UDS_CORE_BASE_PACKAGE:
-        description: Pinned standalone UDS Core base package
-        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
-      UDS_CORE_IDENTITY_PACKAGE:
-        description: Pinned standalone UDS Core identity and authorization package
-        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
-      BUILD_IMAGES:
-        description: Build local Packer images (1 = build)
-        default: "0"
-      SKIP_BASE:
-        description: Skip the base Packer image build
-        default: "0"
-      SKIP_UDS_CORE:
-        description: Skip the UDS Core Packer image build
-        default: "0"
-      VM_IMAGE_TAG:
-        description: VM image tag (defaults to package version)
-        default: ""
-      LOCAL_VM_IMAGES:
-        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
-        default: "0"
-    actions:
-      - task: local-e2e
-        with:
-          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
-          UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
-          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
-          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
-          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
-          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
-          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}

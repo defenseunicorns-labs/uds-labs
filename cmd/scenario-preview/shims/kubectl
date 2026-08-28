@@ -1,0 +1,44 @@
+#!/bin/sh
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+set -eu
+workspace=${PREVIEW_WORKSPACE:?PREVIEW_WORKSPACE is required}
+deployed="$workspace/.scenario-preview/deployed"
+
+if [ "${1:-}" != "get" ]; then
+  echo "[preview] kubectl $* is not simulated" >&2
+  exit 1
+fi
+resource=${2:-}
+case "$resource" in
+  namespace|namespaces)
+    [ "${3:-}" = "myapp" ] && [ -f "$deployed" ] && exit 0
+    ;;
+  pods|pod)
+    [ -f "$deployed" ] || { echo "No resources found in myapp namespace."; exit 1; }
+    if printf '%s' " $* " | grep -q ' --no-headers '; then
+      printf 'myapp-7f59fdbd65-9qf5q  1/1  Running  0  12s\n'
+    else
+      printf 'NAME                       READY  STATUS   RESTARTS  AGE\nmyapp-7f59fdbd65-9qf5q  1/1    Running  0         12s\n'
+    fi
+    exit 0
+    ;;
+  package|packages)
+    [ -f "$deployed" ] || { echo "Error from server (NotFound): packages.uds.dev \"myapp\" not found" >&2; exit 1; }
+    if printf '%s' "$*" | grep -q 'jsonpath='; then
+      printf 'Ready'
+    else
+      printf 'NAME    PHASE   AGE\nmyapp   Ready   12s\n'
+    fi
+    exit 0
+    ;;
+  virtualservice,networkpolicy,authorizationpolicy)
+    [ -f "$deployed" ] || exit 1
+    printf 'VirtualService.networking.istio.io/myapp\nNetworkPolicy.networking.k8s.io/myapp\nAuthorizationPolicy.security.istio.io/myapp\n'
+    exit 0
+    ;;
+esac
+
+echo "[preview] no simulated result for kubectl $*" >&2
+exit 1

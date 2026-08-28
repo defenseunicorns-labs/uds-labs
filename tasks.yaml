@@ -1,9 +1,12 @@
 # Copyright 2026 Defense Unicorns
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+# yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
 
 ---
 
 includes:
+  # UDM Common owns the CAT/Witness onboarding namespaces below. Keep these
+  # names because UDM tasks call one another by setup:*/olm:*/scan:* names.
   - attest: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/attest.yaml
   - build: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/build.yaml
   - olm: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/olm.yaml
@@ -14,11 +17,12 @@ includes:
   - setup: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/setup.yaml
   - vouch: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/vouch.yaml
   - udm-publish-tasks: https://raw.githubusercontent.com/defenseunicorns-udm/udm-common/v0.13.4/tasks/publish.yaml
-  - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.24.14/tasks/setup.yaml
+  - uds-setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/setup.yaml
   - create: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/create.yaml
   - pull: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/pull.yaml
   - deploy: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/deploy.yaml
   - actions: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/actions.yaml
+  - lint: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/lint.yaml
   - upgrade: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/upgrade.yaml
   - publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
   - quality: tasks/quality.yaml
@@ -27,6 +31,7 @@ includes:
   - cluster: tasks/cluster.yaml
   - access: tasks/access.yaml
   - workflow: tasks/workflow.yaml
+  - preview: tasks/preview.yaml
 
 variables:
   # Set by the release workflow. Leaving these empty keeps local package
@@ -64,20 +69,6 @@ tasks:
       # namespaced quality:lint task from this root task.
       - description: Run Go linters and static analysis
         cmd: golangci-lint run ./...
-
-  - name: lint:all
-    description: Lint YAML and shell files without repository-wide license enforcement
-    actions:
-      - description: Lint YAML files
-        cmd: yamllint .
-      - description: Lint shell scripts
-        shell:
-          linux: bash
-          darwin: bash
-        cmd: |
-          set -euo pipefail
-          find . -type f -name '*.sh' -not -path './.git/*' -print0 \
-            | xargs -0 -r shellcheck -e SC1091
 
   - name: lint-all
     description: Run the grouped shell and YAML lint task
@@ -421,8 +412,13 @@ tasks:
           ttl_minutes: ${{ .inputs.ttl_minutes }}
           name: ${{ .inputs.name }}
 
+  - name: test-session-lifecycle
+    description: Create, verify, and delete a KubeVirt-backed LabSession
+    actions:
+      - task: access:test-session-lifecycle
+
   - name: create-test-user
-    description: Create test Keycloak user (doug@uds.dev / unicorn123!@#UN) in /UDS Core/Admin
+    description: Create the documented local Keycloak test user in /UDS Core/Admin
     actions:
       - task: access:create-test-user
 
@@ -454,9 +450,6 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
-      BUNDLE_PROFILE:
-        description: Bundle profile to build and deploy (default or local)
-        default: default
     actions:
       - task: workflow:deploy-stack
         with:
@@ -465,7 +458,6 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
 
   - name: cluster-up
     description: "Backward-compatible alias: bootstrap local k3s, then deploy the UDS bundle."
@@ -499,24 +491,42 @@ tasks:
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
 
   - name: redeploy
-    description: Rebuild and redeploy through the UDS bundle without rebuilding infra packages
+    description: Rebuild and redeploy through the canonical UDS bundle
     inputs:
       vm_image_tag:
         description: VM image tag (defaults to package version)
         default: ""
-      BUNDLE_PROFILE:
-        description: Bundle profile to redeploy
-        default: local
     actions:
       - task: workflow:redeploy
         with:
           vm_image_tag: ${{ .inputs.vm_image_tag }}
-          BUNDLE_PROFILE: ${{ .inputs.BUNDLE_PROFILE }}
 
   - name: smoke-test
     description: Verify golden PVCs, platform, authservice, and demo-route authorization
     actions:
       - task: workflow:smoke-test
+
+  # Standard UDS package task contract. Implementations live under test: so
+  # package-level k3d workflows remain separate from the full local E2E flow.
+  - name: default
+    description: Setup a k3d cluster, deploy the package, and run package checks
+    actions:
+      - task: test:default
+
+  - name: create-dev-package
+    description: Build the current application image and create the test package
+    actions:
+      - task: test:create-dev-package
+
+  - name: create-deploy-test-bundle
+    description: Deploy the package and run package-level health checks
+    actions:
+      - task: test:create-deploy-test-package
+
+  - name: dev
+    description: Create and deploy the package on an existing k3d cluster
+    actions:
+      - task: test:dev
 
   # Called by uds-common's callable-test workflow. Keep these adapters at the
   # root because callable-test invokes the unqualified task names.
@@ -529,6 +539,22 @@ tasks:
     description: Test upgrading the latest published package to the current branch
     actions:
       - task: test:test-upgrade
+
+  - name: validate-package-artifact
+    description: Deploy the freshly built package on k3d and run package-only checks
+    actions:
+      - task: uds-setup:k3d-test-cluster
+      - task: deploy:package
+        with:
+          options: "--set OPERATOR_ENABLED=false"
+      - description: Verify the package-only deployment
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          kubectl wait deployment/uds-labs -n uds-labs --for=condition=Available --timeout=300s
+          kubectl wait packages/uds-labs -n uds-labs --for=jsonpath='{.status.phase}'=Ready --timeout=300s
 
   # Called by uds-common's callable-publish workflow. This keeps the standard
   # release contract while preserving the lab-specific image/package build.
@@ -567,6 +593,9 @@ tasks:
           enable_sigstore: "false"
           witness_workingdir: .
 
+      - description: Validate the built package on k3d before publication
+        task: validate-package-artifact
+
       - description: Vouch the package and its build attestation to CAT
         if: ${{ and (ne .variables.OLM_CAT "") (ne .variables.OLM_ORG "") }}
         task: vouch:package
@@ -581,11 +610,11 @@ tasks:
         with:
           team: uds
 
-  # Canonical UDS Army publication pipeline. This remains separate from the
-  # uds-common GHCR release task above because CAT/vouch and the Army registry
-  # require the udm-common attest -> scan -> build -> vouch -> publish flow.
+  # UDS Proving Ground onboarding pipeline. This remains separate from the
+  # uds-common GHCR release task because CAT/Witness, vouch, and the Proving
+  # Ground registry use the udm-common compliance flow.
   - name: udm-publish
-    description: Attest, scan, build, vouch, and publish to registry.uds-mil.us
+    description: Onboard, attest, vouch, and publish the package to UDS Proving Ground
     inputs:
       github_token:
         description: GitHub token used to install OLM from GHCR
@@ -597,10 +626,10 @@ tasks:
         description: CAT/OLM organization
         default: defenseunicorns
       registry:
-        description: UDS Army OCI registry
+        description: UDS Proving Ground OCI registry
         default: registry.uds-mil.us
       registry_org:
-        description: Organization path in the UDS Army registry
+        description: Organization path in the UDS Proving Ground registry
         default: defenseunicorns
       registry_user_id:
         description: Registry username
@@ -645,6 +674,9 @@ tasks:
           architecture: ${{ .inputs.architecture }}
           witness_workingdir: .
 
+      - description: Validate the built package on k3d before UDS Proving Ground publication
+        task: validate-package-artifact
+
       - description: Vouch the package and attestations to CAT
         task: vouch:package
         with:
@@ -654,7 +686,7 @@ tasks:
           sarif_files: gitleaks.sarif.json,opengrep.sarif.json
           test_directory: ""
 
-      - description: Publish the vouched package to the UDS Army registry
+      - description: Publish the vouched package to the UDS Proving Ground registry
         task: udm-publish-tasks:zarf-package
         with:
           registry: ${{ .inputs.registry }}
@@ -691,45 +723,6 @@ tasks:
         default: "0"
     actions:
       - task: workflow:local-e2e
-        with:
-          WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
-          UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}
-          UDS_CORE_IDENTITY_PACKAGE: ${{ .inputs.UDS_CORE_IDENTITY_PACKAGE }}
-          BUILD_IMAGES: ${{ .inputs.BUILD_IMAGES }}
-          SKIP_BASE: ${{ .inputs.SKIP_BASE }}
-          SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
-          VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
-          LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
-
-  - name: dev
-    description: Backward-compatible alias for local-e2e
-    inputs:
-      WIPE_CLUSTER:
-        description: Wipe and reinstall k3s (1 = wipe)
-        default: "1"
-      UDS_CORE_BASE_PACKAGE:
-        description: Pinned standalone UDS Core base package
-        default: oci://ghcr.io/defenseunicorns/packages/uds/core-base:1.10.0-upstream
-      UDS_CORE_IDENTITY_PACKAGE:
-        description: Pinned standalone UDS Core identity and authorization package
-        default: oci://ghcr.io/defenseunicorns/packages/uds/core-identity-authorization:1.10.0-upstream
-      BUILD_IMAGES:
-        description: Build local Packer images (1 = build)
-        default: "0"
-      SKIP_BASE:
-        description: Skip the base Packer image build
-        default: "0"
-      SKIP_UDS_CORE:
-        description: Skip the UDS Core Packer image build
-        default: "0"
-      VM_IMAGE_TAG:
-        description: VM image tag (defaults to package version)
-        default: ""
-      LOCAL_VM_IMAGES:
-        description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
-        default: "0"
-    actions:
-      - task: workflow:dev
         with:
           WIPE_CLUSTER: ${{ .inputs.WIPE_CLUSTER }}
           UDS_CORE_BASE_PACKAGE: ${{ .inputs.UDS_CORE_BASE_PACKAGE }}

@@ -92,7 +92,7 @@ tasks:
 
           echo ""
           echo "qcow2 images built and patched (cloud-init enabled)."
-          echo "Next: uds run dev --with WIPE_CLUSTER=0 --with LOCAL_VM_IMAGES=1"
+          echo "Next: uds run local-e2e --with WIPE_CLUSTER=0 --with LOCAL_VM_IMAGES=1"
           echo "Base:     ${BASE_IMAGE:-<skipped>}"
           echo "UDS Core: ${UDS_CORE_IMAGE:-<skipped>}"
         maxTotalSeconds: 7200
@@ -272,56 +272,27 @@ tasks:
         maxTotalSeconds: 3600
 
   - name: build-bundle
-    description: Build the selected UDS bundle profile
-    inputs:
-      profile:
-        description: Bundle profile to build (default or local)
-        default: default
+    description: Build the canonical UDS Labs bundle
     actions:
       - description: Create UDS bundle
         cmd: |
           BUNDLE_TMPDIR="${ZARF_TMPDIR:-$HOME/.cache/zarf-tmp}"
           mkdir -p "$BUNDLE_TMPDIR"
-          case "${{ .inputs.profile }}" in
-            default) BUNDLE_DIR=bundle ;;
-            local) BUNDLE_DIR=bundle/local ;;
-            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
-          esac
-          uds create "$BUNDLE_DIR" --confirm --tmpdir "$BUNDLE_TMPDIR"
+          uds create bundle --confirm --tmpdir "$BUNDLE_TMPDIR"
         # Bundle assembly embeds the large VM image package built above.
         maxTotalSeconds: 3600
 
   - name: deploy-bundle
-    description: Deploy the latest bundle for the selected profile
+    description: Deploy the latest canonical UDS Labs bundle
     inputs:
-      profile:
-        description: Bundle profile to deploy (default or local)
-        default: default
       config:
-        description: Path to the ignored, environment-specific default-profile config
+        description: Path to the ignored, environment-specific bundle config
         default: bundle/uds-config.yaml
     actions:
       - description: Deploy bundle
         cmd: |
-          case "${{ .inputs.profile }}" in
-            default)
-              BUNDLE_DIR=bundle
-              BUNDLE_NAME=uds-labs
-              ;;
-            local)
-              BUNDLE_DIR=bundle/local
-              BUNDLE_NAME=uds-labs-local
-              ;;
-            *) echo "ERROR: unknown bundle profile: ${{ .inputs.profile }}" >&2; exit 1 ;;
-          esac
-          BUNDLE=$(find "$BUNDLE_DIR" -maxdepth 1 -type f -name "uds-bundle-${BUNDLE_NAME}-*.tar.zst" -print | sort | tail -1)
-          [ -n "$BUNDLE" ] || { echo "ERROR: no ${BUNDLE_NAME} bundle found in ${BUNDLE_DIR}/ — run build-bundle first"; exit 1; }
-
-          if [ "${{ .inputs.profile }}" = "local" ]; then
-            echo "Deploying local profile: $BUNDLE"
-            uds deploy "$BUNDLE" --confirm
-            exit 0
-          fi
+          BUNDLE=$(find bundle -maxdepth 1 -type f -name "uds-bundle-uds-labs-*.tar.zst" -print | sort | tail -1)
+          [ -n "$BUNDLE" ] || { echo "ERROR: no uds-labs bundle found in bundle/ — run build-bundle first"; exit 1; }
 
           CONFIG="${{ .inputs.config }}"
           case "$CONFIG" in /*) ;; *) CONFIG="$(pwd)/$CONFIG" ;; esac

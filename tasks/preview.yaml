@@ -1,0 +1,25 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+---
+
+tasks:
+  - name: serve
+    description: Build and open the cluster-free Scenario Preview for one scenario
+    inputs:
+      scenario:
+        description: Scenario identifier
+        default: python-to-uds
+      port:
+        description: Local HTTP port
+        default: "8080"
+    actions:
+      - description: Build the native container image
+        cmd: docker build -f cmd/scenario-preview/Dockerfile -t uds-labs/scenario-preview:dev .
+      - description: Open Scenario Preview
+        cmd: |
+          docker run --rm --init \
+            --cap-drop ALL \
+            -p ${{ .inputs.port }}:8080 \
+            uds-labs/scenario-preview:dev \
+            --scenario ${{ .inputs.scenario }}
