@@ -1,7 +1,7 @@
 # Copyright 2026 Defense Unicorns
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
-name: UDS Proving Ground Compliance
+name: CI
 
 # UDM Common provides the CAT/Witness compliance lane for applications being
 # onboarded into UDS Proving Ground. Package publication remains owned by the
