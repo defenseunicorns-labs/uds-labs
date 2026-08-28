@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 # Build all lab qcow2 images in order: base → uds-core.
 # The base image combines what were previously the separate base and tools stages.
 # Each stage uses the previous stage's qcow2 as its input disk.

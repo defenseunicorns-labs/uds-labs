@@ -1,6 +1,3 @@
-// Copyright 2026 Defense Unicorns
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 // Package controller holds the LabSession reconciler (ADR-0011). It is
 // provider-agnostic: it owns the lifecycle state machine (provisioning →
 // running → ready, TTL expiry, teardown) and delegates VM creation/deletion to

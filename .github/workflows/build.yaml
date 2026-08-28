@@ -1,22 +1,15 @@
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 name: CI
 
-# UDM Common provides the CAT/Witness compliance lane for applications being
-# onboarded into UDS Proving Ground. Package publication remains owned by the
-# separate release workflows.
+# PR and branch CI validates source quality. Release publication is handled by
+# release.yaml through the standard uds-common callable-publish workflow.
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
-  workflow_dispatch:
-
-concurrency:
-  group: udm-ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  compliance:
+  ci:
     name: CI
     runs-on: ubuntu-latest
     permissions:
@@ -24,8 +17,8 @@ jobs:
       packages: read
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9238b820485411b19d3511a749cd1482afba4302 # v0.13.4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9aaad66b21c7637b5be3d6aafdb21c9e7ff1df2a # v0.10.3
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod

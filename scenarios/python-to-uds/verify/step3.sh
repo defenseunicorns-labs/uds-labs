@@ -1,7 +1,4 @@
 #!/bin/bash
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 # Pass when the UDS Package CR exists with the required fields.
 [[ -f /root/myapp/chart/templates/uds-package.yaml ]] || exit 1
 grep -q "kind: Package" /root/myapp/chart/templates/uds-package.yaml || exit 1

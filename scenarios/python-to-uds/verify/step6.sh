@@ -1,7 +1,4 @@
 #!/bin/bash
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 # Pass when at least one pod is Running in the myapp namespace.
 export HOME=/root
 export KUBECONFIG=/root/.kube/config

@@ -31,6 +31,7 @@ includes:
   - cluster: tasks/cluster.yaml
   - access: tasks/access.yaml
   - workflow: tasks/workflow.yaml
+  - preview: tasks/preview.yaml
 
 variables:
   # Set by the release workflow. Leaving these empty keeps local package

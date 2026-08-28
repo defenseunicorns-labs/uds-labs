@@ -1,6 +1,3 @@
-// Copyright 2026 Defense Unicorns
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 // Package session is the thin server-side session layer for the KubeVirt backend
 // (Phase E, ADR-0010/0011). Create/Get/Delete operate on LabSession CRs; the
 // operator reconciles them into VMIs.

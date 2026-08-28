@@ -1,6 +1,3 @@
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 title: "Tools Playground"
 description: "Pre-configured sandbox with Docker, k3d, uds CLI, neovim, jq, yq, and yamllint installed. Deploy and experiment freely."
 outcome: "Explore UDS and cloud-native tools in an isolated environment."
