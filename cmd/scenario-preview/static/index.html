@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!--
+ Copyright 2026 Defense Unicorns
+ SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UDS Labs — Scenario Preview</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .preview-badge { padding:2px 7px; border:1px solid rgba(88,166,255,.45); border-radius:999px; color:var(--accent); background:rgba(88,166,255,.08); font-size:11px; }
+    .workspace { display:none; flex-direction:column; height:100%; background:var(--bg); padding:16px; gap:8px; }
+    .workspace.active { display:flex; }
+    .workspace select, .workspace textarea { width:100%; border:1px solid var(--border); border-radius:4px; background:#010409; color:var(--text); font:13px var(--mono); padding:8px; }
+    .workspace textarea { flex:1; resize:none; }
+    .workspace-actions { display:flex; justify-content:flex-end; gap:8px; }
+    .instructions-body pre { cursor:pointer; padding-bottom:32px; }
+    .instructions-body pre:hover { border-color:var(--accent); }
+    .instructions-body pre::after { content:"▶  run"; position:absolute; bottom:7px; right:10px; color:var(--accent); font:11px var(--font); }
+    .instructions-body pre.running::after { content:"Sent"; color:var(--success); }
+    .preview-result { white-space:pre-wrap; color:var(--text-muted); font-size:12px; margin-right:auto; }
+    .preview-result.pass { color:var(--success); }.preview-result.fail { color:var(--danger); }
+    #terminal-frame { display:block; width:100%; height:100%; border:0; background:#000; }
+    @media (max-width:800px) { .lab-layout { grid-template-columns:1fr; height:auto; }.instructions-panel { min-height:55vh; border-right:0; border-bottom:1px solid var(--border); }.terminal-panel { height:55vh; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="logo">UDS Labs</span>
+    <span class="preview-badge">Scenario Preview</span>
+    <span id="scenario-title" style="color:var(--text-muted);font-size:13px;"></span>
+    <span style="flex:1"></span>
+    <span class="timer">No cluster required</span>
+  </nav>
+  <div class="lab-layout">
+    <div class="instructions-panel">
+      <div class="instructions-header">
+        <span class="title" id="step-title">Loading…</span>
+        <div class="step-nav" id="step-counter"></div>
+      </div>
+      <div class="instructions-body" id="instructions-body"></div>
+      <div class="instructions-footer">
+        <button class="btn btn-ghost" id="prev-btn">← Prev</button>
+        <div class="step-dots" id="step-dots"></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="result" class="preview-result"></span>
+          <button class="btn btn-check" id="check-btn">Check</button>
+          <button class="btn btn-primary" id="next-btn">Next →</button>
+        </div>
+      </div>
+    </div>
+    <div class="terminal-panel">
+      <div class="terminal-header">
+        <div class="tab-bar"><button class="tab-btn active" id="terminal-tab">Lab Terminal</button></div>
+        <button class="tab-btn tab-ide" id="workspace-btn" style="margin-left:8px;">⌨ Workspace</button>
+        <span style="flex:1"></span>
+        <span style="font-size:12px;color:var(--text-muted);">Connected</span>
+      </div>
+      <div class="terminal-frame">
+        <iframe id="terminal-frame" src="/terminal/" title="Scenario Preview terminal"></iframe>
+        <div class="workspace" id="workspace-view">
+          <label for="files" style="font-size:12px;color:var(--text-muted);">Workspace file</label>
+          <select id="files"></select>
+          <textarea id="editor" spellcheck="false" aria-label="Workspace file editor"></textarea>
+          <div class="workspace-actions"><button class="btn btn-primary" id="save-btn">Save</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+let scenario, currentStep = 0, currentFile = ''
+const $ = id => document.getElementById(id)
+const escape = value => String(value).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))
+async function request(url, options) { const response = await fetch(url, options); if (!response.ok) throw new Error(await response.text()); const type = response.headers.get('content-type') || ''; return type.includes('application/json') ? response.json() : response.text() }
+function markdown(markdown) {
+  const chunks = markdown.split(/```bash\n([\s\S]*?)```/g)
+  return chunks.map((chunk, index) => index % 2 ? `<pre data-command="${encodeURIComponent(chunk)}"><code>${escape(chunk)}</code></pre>` : escape(chunk).replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n\n/g, '</p><p>')).join('').replace(/^([^<][\s\S]*)$/, '<p>$1</p>')
+}
+function showStep(index) {
+  currentStep = Math.max(0, Math.min(index, scenario.steps.length - 1)); const step = scenario.steps[currentStep]
+  $('step-title').textContent = step.title; $('step-counter').textContent = `Step ${currentStep + 1} of ${scenario.steps.length}`
+  $('instructions-body').innerHTML = markdown(step.content)
+  document.querySelectorAll('[data-command]').forEach(block => block.onclick = async () => { const command = decodeURIComponent(block.dataset.command); const result = await request('/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({command})}); if (!result.success) { $('result').textContent = result.output; $('result').className = 'preview-result fail'; return } block.classList.add('running'); setTimeout(() => block.classList.remove('running'), 1000); showTerminal(); $('terminal-frame').focus() })
+  $('prev-btn').disabled = currentStep === 0; $('next-btn').textContent = currentStep === scenario.steps.length - 1 ? 'Finish' : 'Next →'; $('result').textContent = ''; $('result').className = 'preview-result'
+  $('step-dots').innerHTML = scenario.steps.map((_, i) => `<span class="step-dot ${i === currentStep ? 'active' : ''}" data-step="${i}"></span>`).join('')
+  document.querySelectorAll('[data-step]').forEach(dot => dot.onclick = () => showStep(Number(dot.dataset.step)))
+}
+function showTerminal() { $('terminal-frame').style.display = 'block'; $('workspace-view').classList.remove('active'); $('terminal-tab').classList.add('active'); $('workspace-btn').classList.remove('active') }
+function showWorkspace() { $('terminal-frame').style.display = 'none'; $('workspace-view').classList.add('active'); $('terminal-tab').classList.remove('active'); $('workspace-btn').classList.add('active') }
+async function loadFiles() { const files = await request('/api/tree'); const previous = currentFile; $('files').innerHTML = files.map(file => `<option value="${escape(file)}">${escape(file)}</option>`).join(''); currentFile = files.includes(previous) ? previous : files[0]; if (currentFile) { $('files').value = currentFile; $('editor').value = await request('/api/files?path=' + encodeURIComponent(currentFile)) } }
+async function changeFile() { currentFile = $('files').value; $('editor').value = await request('/api/files?path=' + encodeURIComponent(currentFile)) }
+async function saveFile() { await request('/api/files?path=' + encodeURIComponent(currentFile), {method:'PUT', body:$('editor').value}) }
+async function checkStep() { const result = await request('/api/verify/' + (currentStep + 1), {method:'POST'}); $('result').textContent = result.messages.join('\n'); $('result').className = 'preview-result ' + (result.passed ? 'pass' : 'fail') }
+async function boot() { scenario = await request('/api/scenario'); $('scenario-title').textContent = scenario.title; $('prev-btn').onclick = () => showStep(currentStep - 1); $('next-btn').onclick = () => showStep(currentStep + 1); $('check-btn').onclick = checkStep; $('workspace-btn').onclick = showWorkspace; $('terminal-tab').onclick = showTerminal; $('files').onchange = changeFile; $('save-btn').onclick = saveFile; showStep(0); await loadFiles() }
+boot().catch(error => { document.body.innerHTML = `<pre>${escape(error.message)}</pre>` })
+</script>
+</body>
+</html>

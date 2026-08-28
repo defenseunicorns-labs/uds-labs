@@ -15,6 +15,31 @@ tags:
   - helm
   - python
   - docker
+preview:
+  fixture: preview/fixture
+  workspace: /root/myapp
+  checks:
+    - step: 1
+      path: app.py
+      contains: ["@app.route(\"/health\")", "port=8080"]
+    - step: 2
+      path: chart/templates/deployment.yaml
+      contains: ["kind: Deployment", "containerPort: 8080"]
+    - step: 2
+      path: chart/templates/service.yaml
+      contains: ["kind: Service", "targetPort: 8080"]
+    - step: 3
+      path: chart/templates/uds-package.yaml
+      contains: ["kind: Package", "enableAuthserviceSelector", "network:", "expose:"]
+    - step: 4
+      path: zarf.yaml
+      contains: ["ZarfPackageConfig", "myapp:dev"]
+    - step: 5
+      path: bundle/uds-bundle.yaml
+      contains: ["UDSBundle", "name: myapp"]
+    - step: 5
+      path: tasks.yaml
+      contains: ["uds-common", "name: dev"]
 steps:
   - title: "The app: Python Flask on port 8080"
     text: steps/1-meet-the-app.md

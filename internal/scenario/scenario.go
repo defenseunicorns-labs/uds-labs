@@ -20,6 +20,23 @@ type Step struct {
 	HasVerify bool   `yaml:"-"      json:"has_verify"`
 }
 
+// Preview describes a cluster-free authoring environment for a scenario. The
+// fixture is copied into Workspace before the learner runs the documented steps.
+type Preview struct {
+	Fixture   string         `yaml:"fixture"   json:"-"`
+	Workspace string         `yaml:"workspace" json:"-"`
+	Checks    []PreviewCheck `yaml:"checks"    json:"-"`
+}
+
+// PreviewCheck is a small, declarative assertion over a learner-owned file.
+// It intentionally validates artifacts rather than trying to emulate UDS or
+// Kubernetes in full.
+type PreviewCheck struct {
+	Step     int      `yaml:"step"     json:"-"`
+	Path     string   `yaml:"path"     json:"-"`
+	Contains []string `yaml:"contains" json:"-"`
+}
+
 type Scenario struct {
 	ID            string        `yaml:"-"            json:"id"`
 	Title         string        `yaml:"title"        json:"title"`
@@ -35,6 +52,7 @@ type Scenario struct {
 	Image         string        `yaml:"image"        json:"image,omitempty"`
 	Size          string        `yaml:"size"         json:"size,omitempty"`
 	Services      []ServiceLink `yaml:"services"     json:"services"`
+	Preview       *Preview      `yaml:"preview"      json:"-"`
 }
 
 type Summary struct {
