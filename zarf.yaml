@@ -1,37 +1,30 @@
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
-# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
 apiVersion: zarf.dev/v1alpha1
-
 kind: ZarfPackageConfig
 metadata:
   name: uds-labs
   description: Lab server and operator — CRD, Deployments, RBAC.  KubeVirt/CDI/UDS Core are in the bundle.
-  version: dev
-
-variables:
-  - name: DOMAIN
-    description: Base domain (e.g. uds.dev) — used by the UDS Package CR for Istio expose
-    default: uds.dev
-
+  version: v0.6.0-uds.2
 components:
   - name: lab-crds
-    required: true
     description: LabSession CRD and VM namespace
+    required: true
     manifests:
       - name: lab-crds
         files:
           - deploy/namespace.yaml
           - deploy/crd/labs.uds.dev_labsessions.yaml
-
+    actions:
+      onRemove:
+        before:
+          - cmd: "if ./zarf tools kubectl get crd labsessions.labs.uds.dev >/dev/null 2>&1; then\n  ./zarf tools kubectl get labsessions.labs.uds.dev --all-namespaces \\\n    -o jsonpath='{range .items[*]}{.metadata.namespace}{\" \"}{.metadata.name}{\"\\\\n\"}{end}' \\\n    | while read -r namespace name; do\n        [ -n \"$name\" ] || continue\n        ./zarf tools kubectl -n \"$namespace\" patch labsession \"$name\" \\\n          --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'\n      done\nfi\n"
+            description: Remove orphaned LabSession teardown finalizers
   - name: uds-labs
-    required: true
     description: Lab server and operator Deployments, RBAC, and supporting resources
+    required: true
     charts:
       - name: uds-labs
+        version: v0.6.0-uds.2
         localPath: chart
-        version: 0.4.1
         namespace: uds-labs
         variables:
           - name: DOMAIN
@@ -41,4 +34,9 @@ components:
             description: Enable the KubeVirt-backed LabSession operator
             path: operator.enabled
     images:
-      - ghcr.io/defenseunicorns-labs/uds-labs:0.4.1
+      - ghcr.io/defenseunicorns-labs/uds-labs:v0.6.0-uds.2
+      - registry.k8s.io/pause:3.10
+variables:
+  - name: DOMAIN
+    description: Base domain (e.g. uds.dev) — used by the UDS Package CR for Istio expose
+    default: uds.dev

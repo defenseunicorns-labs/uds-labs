@@ -1,14 +1,8 @@
-# Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
-# Canonical UDS Labs bundle. KubeVirt and CDI are consumed as published OCI
-# packages; repository-owned packages are assembled from local paths.
 kind: UDSBundle
 metadata:
   name: uds-labs
   description: UDS Labs KubeVirt bundle
-  version: dev
-
+  version: v0.6.0-uds.2
 packages:
   - name: kubevirt
     repository: ghcr.io/uds-packages/kubevirt
@@ -17,22 +11,28 @@ packages:
       kubevirt:
         uds-kubevirt-config:
           variables:
-            - name: VM_NAMESPACES
-              path: vmNamespaces
-              default: [uds-labs-vms]
-            - name: KUBEVIRT_OPERATOR_NODE_PLACEMENT
-              path: operator.nodePlacement
-              default: &defaultPlacement
-                nodeSelector: {}
+            - path: vmNamespaces
+              name: VM_NAMESPACES
+              default:
+                - uds-labs-vms
+            - path: operator.nodePlacement
+              name: KUBEVIRT_OPERATOR_NODE_PLACEMENT
+              default:
                 affinity: {}
+                nodeSelector: {}
                 tolerations: []
-            - name: KUBEVIRT_INFRA_NODE_PLACEMENT
-              path: kubevirt.infra.nodePlacement
-              default: *defaultPlacement
-            - name: KUBEVIRT_WORKLOAD_NODE_PLACEMENT
-              path: kubevirt.workloads.nodePlacement
-              default: *defaultPlacement
-
+            - path: kubevirt.infra.nodePlacement
+              name: KUBEVIRT_INFRA_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: kubevirt.workloads.nodePlacement
+              name: KUBEVIRT_WORKLOAD_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
   - name: cdi
     repository: ghcr.io/uds-packages/cdi
     ref: 1.65.0-uds.5-upstream
@@ -40,56 +40,89 @@ packages:
       cdi:
         uds-cdi-config:
           variables:
-            - name: OPERATOR_NODE_PLACEMENT
-              path: operator.nodePlacement
-              default: *defaultPlacement
-            - name: INFRA_NODE_PLACEMENT
-              path: cdi.infra
-              default: *defaultPlacement
-            - name: WORKLOAD_NODE_PLACEMENT
-              path: cdi.workloads
-              default: *defaultPlacement
-            - name: EXPOSE_UPLOAD_PROXY
-              path: uploadProxy.expose
-              default: false
-            - name: ALLOW_IMPORTER_EGRESS
-              path: network.importerEgress.enabled
-              default: true
-            - name: WORKLOAD_NAMESPACES
-              path: workloadNamespaces
-              default: [uds-labs-vms]
-
+            - path: operator.nodePlacement
+              name: OPERATOR_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: cdi.infra
+              name: INFRA_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: cdi.workloads
+              name: WORKLOAD_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: workloadNamespaces
+              name: WORKLOAD_NAMESPACES
+              default:
+                - uds-labs-vms
   - name: uds-labs-vm-images
     path: ../packages/vm-images
-    ref: "0.4.1"
+    ref: 0.4.3
     overrides:
-      vm-image-server:
-        vm-image-server:
-          values:
-            - path: imageServers.placement
-              value: *defaultPlacement
       golden-pvcs:
         golden-pvcs:
           values:
             - path: goldenPVCs.storageClass
               value: ""
-
+      vm-image-server:
+        vm-image-server:
+          values:
+            - path: imageServers.placement
+              value:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
   - name: uds-labs
     path: ../
-    ref: dev
+    ref: v0.6.0-uds.2-upstream
     overrides:
       uds-labs:
         uds-labs:
           values:
             - path: serverPlacement
-              value: *defaultPlacement
+              value:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
             - path: operatorPlacement
-              value: *defaultPlacement
+              value:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
             - path: vmiPlacement
-              value: *defaultPlacement
+              value:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
             - path: storageClass
               value: ""
             - path: maxActiveSessions
               value: 4
             - path: auth.allowedGroups
               value: []
+          variables:
+            - path: serverPlacement
+              name: LAB_SERVER_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: operatorPlacement
+              name: LAB_OPERATOR_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []
+            - path: vmiPlacement
+              name: LAB_VMI_NODE_PLACEMENT
+              default:
+                affinity: {}
+                nodeSelector: {}
+                tolerations: []

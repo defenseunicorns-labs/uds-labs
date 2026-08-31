@@ -1,5 +1,5 @@
 # Copyright 2026 Defense Unicorns
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
 name: Release
 
@@ -7,9 +7,8 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
-# The reusable workflow owns release checks, package publication, and GitHub
-# release/tag creation. Its source snapshot step is skipped for this non-uds-packages org.
 permissions:
   contents: read
   packages: read
@@ -17,27 +16,68 @@ permissions:
 
 jobs:
   publish:
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
-    strategy:
-      matrix:
-        flavor: [upstream]
-        architecture: [amd64]
-    uses: defenseunicorns/uds-common/.github/workflows/callable-publish.yaml@729f266d614a6e4f69876c2c69a789b78cc97853 # v1.28.0
-    with:
-      flavor: ${{ matrix.flavor }}
-      arch: ${{ matrix.architecture }}
-      base-repo: ghcr.io/defenseunicorns-labs
-      team: uds
-      runsOn: ubuntu-latest
-      timeout: 60
-      publish-repo: true
-      uds-pk: true
-      options: >-
-        --set BASE_REPO="ghcr.io/defenseunicorns-labs"
-        --set TEAM="uds"
-        --set OLM_CAT="cat-api.uds-mil.us"
-        --set OLM_ORG="defenseunicorns"
-    secrets: inherit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install UDS CLI
+        uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9aaad66b21c7637b5be3d6aafdb21c9e7ff1df2a # v0.10.3
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL -o /tmp/golangci-lint-install.sh https://raw.githubusercontent.com/golangci/golangci-lint/v2.11.4/install.sh
+          echo "edfa587f31bde70db161d1e5b783e086a1627d7e2f7c91de5f7cca79bcdf8631  /tmp/golangci-lint-install.sh" | sha256sum -c -
+          sh /tmp/golangci-lint-install.sh -b /usr/local/bin v2.11.4
+          rm /tmp/golangci-lint-install.sh
+
+      - name: Install UDS Package Kit
+        env:
+          UDS_PK_VERSION: v0.1.12
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH=amd64 ;;
+            aarch64) ARCH=arm64 ;;
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+          esac
+          curl -fsSL -o /usr/local/bin/uds-pk \
+            "https://github.com/defenseunicorns/uds-pk/releases/download/${UDS_PK_VERSION}/uds-pk_${UDS_PK_VERSION}_$(uname -s)_${ARCH}"
+          chmod +x /usr/local/bin/uds-pk
+
+      - name: Verify Package Kit release eligibility
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uds-pk release check upstream \
+            --arch amd64 \
+            --base-repo ghcr.io/defenseunicorns-labs \
+            --team uds \
+            --verbose
+
+      - name: Build, publish, vouch, and promote the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uds run release --no-progress \
+            --set BASE_REPO="ghcr.io/defenseunicorns-labs" \
+            --set TEAM="uds" \
+            --with github_token="${{ secrets.GITHUB_TOKEN }}" \
+            --with olm_cat="cat-api.uds-mil.us" \
+            --with olm_org="defenseunicorns" \
+            --with registry="registry.uds-mil.us" \
+            --with registry_org="defenseunicorns" \
+            --with registry_user_id="${{ secrets.REGISTRY_USER_ID }}" \
+            --with registry_password="${{ secrets.REGISTRY_PASSWORD }}" \
+            --with architecture="amd64"

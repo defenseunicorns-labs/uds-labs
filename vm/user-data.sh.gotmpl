@@ -85,8 +85,53 @@ cat > /opt/lab-inject.py << 'INJECT_EOF'
 INJECT_EOF
 chmod +x /opt/lab-inject.py
 
-# ── Start tmux session ─────────────────────────────────────────────────────────
-touch /var/log/lab-setup/uds-setup.log
+# ── Scenario setup and terminal ───────────────────────────────────────────────
+# Override the image's entry script so this session keeps setup output in tmux
+# history. `clear` erases that history, which made late terminal connections
+# appear blank even though the setup log was being written.
+cat > /opt/lab-entry.sh << 'ENTRY_EOF'
+#!/bin/bash
+export HOME=/root
+SETUP_DIR=/var/log/lab-setup
+SETUP_LOG="$SETUP_DIR/uds-setup.log"
+
+if [ ! -f "$SETUP_DIR/ready" ]; then
+  clear
+  echo ""
+  echo "  ┌─────────────────────────────────────────────┐"
+  echo "  │  Lab environment is being prepared...       │"
+  echo "  │  Live setup output follows below.            │"
+  echo "  └─────────────────────────────────────────────┘"
+  echo ""
+
+  # Replay output already written before the terminal attached, then follow it.
+  tail -n +1 -F "$SETUP_LOG" &
+  TAIL_PID=$!
+  while [ ! -f "$SETUP_DIR/ready" ]; do
+    sleep 1
+  done
+  kill "$TAIL_PID" 2>/dev/null
+  wait "$TAIL_PID" 2>/dev/null
+
+  echo ""
+  echo "  ┌─────────────────────────────────────────────┐"
+  echo "  │  Lab ready!                                 │"
+  echo "  │  Follow the steps in the left panel.        │"
+  echo "  └─────────────────────────────────────────────┘"
+  echo ""
+fi
+
+exec bash -l
+ENTRY_EOF
+chmod +x /opt/lab-entry.sh
+
+# Golden images can contain runtime state from image construction. A new session
+# must never inherit a previous lab's ready marker or setup output.
+rm -f /var/log/lab-setup/ready /var/log/lab-setup/pods-ready /var/log/lab-setup/image-ready
+: > /var/log/lab-setup/uds-setup.log
+
+# Start the terminal before the setup workload. This lets the browser attach as
+# soon as the VM is running; lab-entry tails the setup log while it progresses.
 log "Starting tmux session 'main'..."
 tmux new-session -d -s main /opt/lab-entry.sh
 
@@ -94,13 +139,12 @@ tmux new-session -d -s main /opt/lab-entry.sh
 log "Enabling services..."
 systemctl enable --now ttyd-main ttyd-shell lab-inject
 log "ttyd listening on :7681 (main), :7682 (shell); inject on :7680"
+
+log "Running scenario setup in background..."
+nohup bash "$SCENARIO_DIR/setup.sh" > /var/log/lab-setup/uds-setup.log 2>&1 &
 {{if .BrowserEnabled}}
 systemctl enable --now lab-xvfb lab-x11vnc lab-novnc lab-browser
 log "browser environment listening on :6080"
 {{end}}
-
-# ── Run scenario setup in background ──────────────────────────────────────────
-log "Running scenario setup in background..."
-nohup bash "$SCENARIO_DIR/setup.sh" > /var/log/lab-setup/uds-setup.log 2>&1 &
 
 log "Bootstrap complete."

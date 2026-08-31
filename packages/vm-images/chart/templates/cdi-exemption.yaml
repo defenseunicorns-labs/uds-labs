@@ -1,0 +1,17 @@
+apiVersion: uds.dev/v1alpha1
+kind: Exemption
+metadata:
+  name: uds-labs-vm-images-cdi
+  namespace: uds-policy-exemptions
+spec:
+  exemptions:
+    - policies:
+        - RestrictIstioTrafficOverrides
+      matcher:
+        kind: pod
+        namespace: {{ .Release.Namespace }}
+        name: '^(cdi-(upload|clone-source)-.*|importer-.*|[0-9a-f-]{36}-source-pod)$'
+      title: UDS Labs VM image CDI traffic overrides
+      description: >-
+        CDI importer and clone Pods require Istio traffic-interception
+        overrides while populating the golden VM disks.

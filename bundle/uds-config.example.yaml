@@ -21,7 +21,12 @@ variables:
     OPERATOR_NODE_PLACEMENT: *defaultPlacement
     INFRA_NODE_PLACEMENT: *defaultPlacement
     WORKLOAD_NODE_PLACEMENT: *defaultPlacement
-    EXPOSE_UPLOAD_PROXY: false
-    ALLOW_IMPORTER_EGRESS: true
     WORKLOAD_NAMESPACES:
       - uds-labs-vms
+
+  uds-labs:
+    LAB_SERVER_NODE_PLACEMENT: *defaultPlacement
+    LAB_OPERATOR_NODE_PLACEMENT: *defaultPlacement
+    # This controls both the VMI and its capacity-bootstrap Pod. Set a
+    # KubeVirt-capable pool selector and any required tolerations here.
+    LAB_VMI_NODE_PLACEMENT: *defaultPlacement

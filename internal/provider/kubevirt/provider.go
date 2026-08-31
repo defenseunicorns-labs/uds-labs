@@ -56,6 +56,12 @@ const (
 
 	// defaultDiskSize is the fallback clone PVC size when GoldenPVCDiskSize is empty.
 	defaultDiskSize = "40Gi"
+
+	// capacityBootstrapSuffix distinguishes the temporary, ordinary Pod that
+	// triggers cluster autoscaling before a VMI requires KubeVirt device resources.
+	capacityBootstrapSuffix = "-capacity"
+	capacityReadyAnnotation = "labs.uds.dev/capacity-bootstrap-ready"
+	capacityBootstrapImage  = "registry.k8s.io/pause:3.10"
 )
 
 // Config wires the provider to the cluster and to scenario content.
@@ -147,6 +153,14 @@ func (p *Provider) Reconcile(ctx context.Context, ls *labv1.LabSession) (provide
 		return provider.Result{Phase: labv1.PhaseFailed, Message: err.Error()}, nil
 	}
 
+	capacityReady, message, err := p.ensureCapacityBootstrap(ctx, ls, name, labels, spec)
+	if err != nil {
+		return provider.Result{}, fmt.Errorf("ensure capacity bootstrap: %w", err)
+	}
+	if !capacityReady {
+		return provider.Result{Phase: labv1.PhaseProvisioning, Message: message}, nil
+	}
+
 	if err := p.ensureDataVolume(ctx, ls, name, labels, goldenPVCName); err != nil {
 		return provider.Result{}, fmt.Errorf("ensure datavolume: %w", err)
 	}
@@ -191,12 +205,17 @@ func (p *Provider) TeardownCompute(ctx context.Context, ls *labv1.LabSession) (b
 		&kvv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name}},
 		&netv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name}},
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: p.cfg.Namespace, Name: name + capacityBootstrapSuffix}},
 	}
 	for _, o := range objs {
 		if err := p.cfg.Client.Delete(ctx, o); err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("delete %T %s: %w", o, name, err)
 		}
 	}
+	if err := p.clearCapacityBootstrap(ctx, ls); err != nil {
+		return false, fmt.Errorf("clear capacity bootstrap state: %w", err)
+	}
+
 	vmi := &kvv1.VirtualMachineInstance{}
 	err := p.cfg.Client.Get(ctx, client.ObjectKey{Namespace: p.cfg.Namespace, Name: name}, vmi)
 	if apierrors.IsNotFound(err) {
@@ -318,6 +337,116 @@ func (p *Provider) ensureUserDataSecret(ctx context.Context, ls *labv1.LabSessio
 		return controllerutil.SetControllerReference(ls, secret, p.cfg.Client.Scheme())
 	})
 	return err
+}
+
+// ensureCapacityBootstrap creates an ordinary Pod with the Lab's placement and
+// resource footprint before creating its VMI. Unlike a virt-launcher Pod, it
+// does not request KubeVirt device resources, so a cluster autoscaler can use
+// it to grow a zero-sized KubeVirt node pool. It is deleted once its node is
+// KubeVirt-ready; the annotation prevents it from being recreated for this
+// compute lifecycle.
+func (p *Provider) ensureCapacityBootstrap(ctx context.Context, ls *labv1.LabSession, name string, labels map[string]string, spec sizing.Spec) (bool, string, error) {
+	if ls.Annotations[capacityReadyAnnotation] == "true" {
+		return true, "", nil
+	}
+
+	cpu, err := resource.ParseQuantity(spec.CPU)
+	if err != nil {
+		return false, "", fmt.Errorf("parse capacity CPU %q: %w", spec.CPU, err)
+	}
+	memory, err := resource.ParseQuantity(spec.Memory)
+	if err != nil {
+		return false, "", fmt.Errorf("parse capacity memory %q: %w", spec.Memory, err)
+	}
+	// KubeVirt adds launcher overhead beyond a VMI's requested guest memory.
+	// Reserve a conservative amount so the bootstrap Pod cannot land on a node
+	// that its eventual VMI would fail to fit.
+	memory.Add(resource.MustParse("512Mi"))
+
+	bootstrapLabels := make(map[string]string, len(labels)+2)
+	for key, value := range labels {
+		bootstrapLabels[key] = value
+	}
+	bootstrapLabels[workloadLabel] = workloadLabelVMI
+	bootstrapLabels[istioDataplaneModeLabel] = istioDataplaneModeNone
+
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name + capacityBootstrapSuffix, Namespace: p.cfg.Namespace}}
+	_, err = controllerutil.CreateOrUpdate(ctx, p.cfg.Client, pod, func() error {
+		pod.Labels = bootstrapLabels
+		if pod.CreationTimestamp.IsZero() {
+			pod.Spec = corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyAlways,
+				NodeSelector:  copyStringMap(p.cfg.NodeSelector),
+				Affinity:      withLabAntiAffinity(p.cfg.Affinity),
+				Tolerations:   append([]corev1.Toleration(nil), p.cfg.Tolerations...),
+				Containers: []corev1.Container{{
+					Name:  "reserve-capacity",
+					Image: capacityBootstrapImage,
+					Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    cpu,
+						corev1.ResourceMemory: memory,
+					}},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: ptr(false),
+						ReadOnlyRootFilesystem:   ptr(true),
+						RunAsNonRoot:             ptr(true),
+						Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+					},
+				}},
+			}
+		}
+		return controllerutil.SetControllerReference(ls, pod, p.cfg.Client.Scheme())
+	})
+	if err != nil {
+		return false, "", err
+	}
+
+	if pod.Status.Phase != corev1.PodRunning || pod.Spec.NodeName == "" {
+		return false, "Waiting for cluster capacity to schedule the Lab bootstrap Pod", nil
+	}
+
+	node := &corev1.Node{}
+	if err := p.cfg.Client.Get(ctx, client.ObjectKey{Name: pod.Spec.NodeName}, node); err != nil {
+		return false, "", fmt.Errorf("get bootstrap node %q: %w", pod.Spec.NodeName, err)
+	}
+	if node.Labels["kubernetes.io/os"] != "linux" {
+		return false, fmt.Sprintf("Waiting for node %q to report kubernetes.io/os=linux", node.Name), nil
+	}
+	if node.Labels["kubevirt.io/schedulable"] != "true" {
+		return false, fmt.Sprintf("Waiting for KubeVirt to make node %q schedulable", node.Name), nil
+	}
+	for _, device := range []corev1.ResourceName{"devices.kubevirt.io/kvm", "devices.kubevirt.io/tun", "devices.kubevirt.io/vhost-net"} {
+		quantity, ok := node.Status.Allocatable[device]
+		if !ok || quantity.Sign() <= 0 {
+			return false, fmt.Sprintf("Waiting for KubeVirt device resource %q on node %q", device, node.Name), nil
+		}
+	}
+
+	if err := p.cfg.Client.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
+		return false, "", fmt.Errorf("delete capacity bootstrap Pod: %w", err)
+	}
+	if err := p.markCapacityBootstrapReady(ctx, ls); err != nil {
+		return false, "", err
+	}
+	return true, "", nil
+}
+
+func (p *Provider) markCapacityBootstrapReady(ctx context.Context, ls *labv1.LabSession) error {
+	before := ls.DeepCopy()
+	if ls.Annotations == nil {
+		ls.Annotations = map[string]string{}
+	}
+	ls.Annotations[capacityReadyAnnotation] = "true"
+	return p.cfg.Client.Patch(ctx, ls, client.MergeFrom(before))
+}
+
+func (p *Provider) clearCapacityBootstrap(ctx context.Context, ls *labv1.LabSession) error {
+	if !ls.DeletionTimestamp.IsZero() || ls.Annotations[capacityReadyAnnotation] == "" {
+		return nil
+	}
+	before := ls.DeepCopy()
+	delete(ls.Annotations, capacityReadyAnnotation)
+	return p.cfg.Client.Patch(ctx, ls, client.MergeFrom(before))
 }
 
 func (p *Provider) ensureVMI(ctx context.Context, ls *labv1.LabSession, name string, labels map[string]string, spec sizing.Spec) error {

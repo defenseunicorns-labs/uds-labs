@@ -19,8 +19,7 @@ k3d kubeconfig get uds > /root/.kube/config
 chmod 600 /root/.kube/config
 export KUBECONFIG=/root/.kube/config
 
-# ── Mark lab ready so user can access terminal ────────────────────────────────
-log "Cluster up — marking lab ready."
+log "Cluster up — waiting for UDS Core pods before opening the terminal."
 
 # Show an initialization notice until pods are fully ready
 cat > /etc/profile.d/uds-init-status.sh << 'EOF'
@@ -32,8 +31,6 @@ if [ ! -f /var/log/lab-setup/pods-ready ]; then
 fi
 EOF
 
-touch /var/log/lab-setup/ready
-
 # ── Wait for pods in background, remove notice when done ─────────────────────
 {
   uds zarf tools kubectl wait --for=condition=Available deployment \
@@ -42,4 +39,5 @@ touch /var/log/lab-setup/ready
     --all --all-namespaces --timeout=300s >> /var/log/lab-setup/uds-setup.log 2>&1 || true
   touch /var/log/lab-setup/pods-ready
   log "All pods ready."
+  touch /var/log/lab-setup/ready
 } &

@@ -54,22 +54,21 @@ retaining that Session PVC; resume reattaches the same disk.
 
 ## Releases
 
-Releases follow the standard UDS Package Kit flow. Source package metadata and
-bundle references use `dev`; the Helm chart and VM-image package retain their
-own version contracts.
+Releases follow the standard UDS Package Kit flow. The `upstream` release
+coordinate is rendered into every repository-owned Labs artifact: the Zarf
+package, `uds-labs` container image, Helm chart, and bundle. VM-image packages
+retain an independent version because their Packer build and publication cadence differ.
 
 1. Update the `upstream` version in [`releaser.yaml`](./releaser.yaml) through a pull request.
-2. Merging to `master` runs [`release.yaml`](./.github/workflows/release.yaml).
-3. The workflow builds the Zarf package, publishes it to GHCR, and creates the GitHub release/tag.
-4. The signed package build is vouched to CAT under the configured `defense-unicorns` organization.
+2. Merging to `master` runs the [`release.yaml`](./.github/workflows/release.yaml) workflow.
+3. Package Kit verifies and renders the release coordinate; `uds run release-tasks:prepare` then synchronizes the Labs package, image, chart, and bundle.
+4. The workflow attests linting and security scans, builds the matching container image and one signed Zarf package, and validates that archive on k3d.
+5. It publishes the validated archive to GHCR and creates the GitHub release/tag, vouches its attestations to CAT, then publishes the exact same archive to UDS Proving Ground.
 
-The package is published at `ghcr.io/defenseunicorns-labs/uds/uds-labs` with an
-`-upstream` tag. In parallel, [`udm-release.yaml`](./.github/workflows/udm-release.yaml)
-runs the UDM Common onboarding/compliance pipeline for UDS Proving Ground and
-publishes the vouched package to `registry.uds-mil.us/defenseunicorns`. It uses
-the repository's registry credentials. VM-image package publication remains a
-separate infrastructure artifact because it requires the Packer/KVM build
-environment.
+The package is first published at `ghcr.io/defenseunicorns-labs/uds/uds-labs`
+with an `-upstream` tag, then promoted to `registry.uds-mil.us/defenseunicorns`.
+VM-image package publication remains a separate infrastructure artifact because
+it requires the Packer/KVM build environment.
 
 ## Quick Start
 

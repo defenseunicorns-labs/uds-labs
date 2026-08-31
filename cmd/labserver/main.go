@@ -22,6 +22,7 @@ import (
 
 	labplatform "github.com/defenseunicorns-labs/uds-labs"
 	labv1 "github.com/defenseunicorns-labs/uds-labs/api/v1alpha1"
+	"github.com/defenseunicorns-labs/uds-labs/internal/buildinfo"
 	"github.com/defenseunicorns-labs/uds-labs/internal/proxy"
 	"github.com/defenseunicorns-labs/uds-labs/internal/scenario"
 	"github.com/defenseunicorns-labs/uds-labs/internal/session"
@@ -171,6 +172,9 @@ func main() {
 
 	// Health check (always public)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
+		jsonOK(w, map[string]string{"version": buildinfo.Version})
+	})
 
 	// Unauthenticated demo routes — authservice MUST exclude /demo and /api/demo-sessions
 	mux.HandleFunc("GET /demo", srv.demoPage)
@@ -833,7 +837,12 @@ func (s *server) proxyToVM(w http.ResponseWriter, r *http.Request, id string, po
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if sess.Status != session.StatusReady || sess.ServiceDNS == "" {
+	// The setup-aware main terminal is intentionally available while the VM is
+	// running so it can stream bootstrap output. Keep extra shells gated until
+	// the lab is fully ready.
+	if (port != 7681 && sess.Status != session.StatusReady) ||
+		(port == 7681 && sess.Status != session.StatusRunning && sess.Status != session.StatusReady) ||
+		sess.ServiceDNS == "" {
 		http.Error(w, "terminal not ready", http.StatusServiceUnavailable)
 		return
 	}

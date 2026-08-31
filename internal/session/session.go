@@ -6,6 +6,7 @@ type Status string
 
 const (
 	StatusProvisioning Status = "provisioning"
+	StatusRunning      Status = "running"
 	StatusReady        Status = "ready"
 	StatusExpired      Status = "expired"
 	StatusPaused       Status = "paused"

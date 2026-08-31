@@ -116,7 +116,7 @@ tasks:
         description: Path to uds-core qcow2
         default: packer/output/uds-core/lab-playground-uds-core.qcow2
       tag:
-        description: Image tag (defaults to package version)
+        description: VM image tag (defaults to the VM image chart's imageTag)
         default: ""
     actions:
       - description: Build OCI container images from qcow2 files
@@ -129,7 +129,7 @@ tasks:
           fi
           TAG="${{ .inputs.tag }}"
           if [ -z "$TAG" ]; then
-            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
+            TAG=$(uds zarf tools yq -r '.imageTag' packages/vm-images/chart/values.yaml)
           fi
           build_image() {
             local name="$1" dockerfile="$2" context_dir="$3" archive="$4"
@@ -150,7 +150,7 @@ tasks:
     description: Push VM image server container images to ghcr.io
     inputs:
       tag:
-        description: Image tag to push (defaults to package version)
+        description: VM image tag to push (defaults to the VM image chart's imageTag)
         default: ""
     actions:
       - description: Push VM images to registry
@@ -158,7 +158,7 @@ tasks:
         cmd: |
           TAG="${{ .inputs.tag }}"
           if [ -z "$TAG" ]; then
-            TAG=$(grep '^  version:' zarf.yaml | head -1 | awk '{print $2}')
+            TAG=$(uds zarf tools yq -r '.imageTag' packages/vm-images/chart/values.yaml)
           fi
           for name in base uds-core; do
             echo "Pushing ghcr.io/defenseunicorns-labs/uds-labs-vm-images/${name}:${TAG}..."
@@ -176,12 +176,17 @@ tasks:
           set -euo pipefail
           IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
           [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
-          echo "Building ${IMAGE}..."
-          docker build -t "$IMAGE" .
+          BUILD_VERSION="${BUILD_VERSION:-$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)}"
+          echo "Building ${IMAGE} (build version: ${BUILD_VERSION})"
+          docker build --build-arg "BUILD_VERSION=${BUILD_VERSION}" -t "$IMAGE" .
         maxTotalSeconds: 600
 
   - name: build-image
     description: Build the uds-labs image using the reference in zarf.yaml
+    inputs:
+      build_version:
+        description: Version shown in the UI and embedded in the binaries
+        default: ""
     actions:
       - description: Build Docker image
         shell:
@@ -191,7 +196,10 @@ tasks:
           set -euo pipefail
           IMAGE=$(grep -o 'ghcr.io/defenseunicorns-labs/uds-labs:[^" ]*' zarf.yaml | head -1)
           [ -n "$IMAGE" ] || { echo "ERROR: no uds-labs image found in zarf.yaml" >&2; exit 1; }
-          docker build -t "$IMAGE" .
+          BUILD_VERSION="${{ .inputs.build_version }}"
+          BUILD_VERSION="${BUILD_VERSION:-${BUILD_VERSION_ENV:-$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)}}"
+          echo "Building ${IMAGE} (build version: ${BUILD_VERSION})"
+          docker build --build-arg "BUILD_VERSION=${BUILD_VERSION}" -t "$IMAGE" .
         maxTotalSeconds: 600
 
   - name: push-all

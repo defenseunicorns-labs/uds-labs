@@ -7,6 +7,27 @@ import (
 	"text/template"
 )
 
+func TestRenderStreamsSetupOutputUntilScenarioIsReady(t *testing.T) {
+	tmpl := template.Must(template.ParseFiles("../../vm/user-data.sh.gotmpl"))
+	scenarios := fstest.MapFS{
+		"example/setup.sh": &fstest.MapFile{Data: []byte("#!/bin/bash\n")},
+	}
+
+	got, err := Render(tmpl, scenarios, "example", "# inject", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`tail -n +1 -F "$SETUP_LOG"`,
+		`while [ ! -f "$SETUP_DIR/ready" ]`,
+		"Live setup output follows below.",
+	} {
+		if !strings.Contains(got, required) {
+			t.Errorf("rendered user-data is missing %q", required)
+		}
+	}
+}
+
 func TestRenderUsesEnvironmentProvidedDNSResolvers(t *testing.T) {
 	tmpl := template.Must(template.ParseFiles("../../vm/user-data.sh.gotmpl"))
 	scenarios := fstest.MapFS{

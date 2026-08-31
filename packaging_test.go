@@ -152,7 +152,47 @@ func TestLabSessionAPIGroupIsConsistent(t *testing.T) {
 	}
 }
 
+func TestLabCRDRemovalUnblocksFinalizedSessions(t *testing.T) {
+	zarf := string(mustReadFile(t, "zarf.yaml"))
+	for _, required := range []string{
+		"onRemove:",
+		"Remove orphaned LabSession teardown finalizers",
+		"patch labsession \"$name\"",
+		`-p '{"metadata":{"finalizers":[]}}'`,
+	} {
+		if !strings.Contains(zarf, required) {
+			t.Errorf("lab-crds removal action is missing %q", required)
+		}
+	}
+}
+
 func TestVMImageComponentsInDedicatedPackage(t *testing.T) {
+	var versionedPackage struct {
+		Metadata struct {
+			Version string `yaml:"version"`
+		} `yaml:"metadata"`
+		Components []struct {
+			Charts []struct {
+				Version string `yaml:"version"`
+			} `yaml:"charts"`
+		} `yaml:"components"`
+	}
+	readYAML(t, "packages/vm-images/zarf.yaml", &versionedPackage)
+	if versionedPackage.Metadata.Version == "" {
+		t.Fatal("VM image package version must be set")
+	}
+	for _, component := range versionedPackage.Components {
+		for _, chart := range component.Charts {
+			if chart.Version != versionedPackage.Metadata.Version {
+				t.Fatalf("VM image chart version %q does not match package version %q", chart.Version, versionedPackage.Metadata.Version)
+			}
+		}
+	}
+	bundle := string(mustReadFile(t, "bundle/uds-bundle.yaml"))
+	if !strings.Contains(bundle, "ref: "+versionedPackage.Metadata.Version) {
+		t.Fatalf("bundle does not reference VM image package version %q", versionedPackage.Metadata.Version)
+	}
+
 	contents, err := os.ReadFile("packages/vm-images/zarf.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -262,6 +302,9 @@ func TestVMImageComponentsInDedicatedPackage(t *testing.T) {
 	if count := strings.Count(serverText, `cdi.kubevirt.io/storage.bind.immediate.requested: "true"`); count != 2 {
 		t.Fatalf("both golden DataVolumes must request immediate binding, got %d annotations", count)
 	}
+	if count := strings.Count(serverText, "helm.sh/resource-policy: keep"); count != 2 {
+		t.Fatalf("both golden DataVolumes must be retained across upgrades, got %d keep annotations", count)
+	}
 	for _, forbidden := range []string{"source:\n    registry:", "secretRef:", "ZARF_REGISTRY", "CDI_REGISTRY", "zarf-docker-registry"} {
 		if strings.Contains(serverText, forbidden) {
 			t.Fatalf("DataVolumes must not contain registry wiring %q", forbidden)
@@ -292,6 +335,20 @@ func TestVMImageComponentsInDedicatedPackage(t *testing.T) {
 		}
 		if strings.Contains(text, "FROM scratch") {
 			t.Fatalf("%s cannot serve HTTP from a scratch image", dockerfile)
+		}
+	}
+}
+
+func TestGoldenDataVolumesAreNotReconciledAfterImport(t *testing.T) {
+	template := string(mustReadFile(t, "packages/vm-images/chart/templates/golden-pvcs.yaml"))
+	for _, required := range []string{
+		`lookup "cdi.kubevirt.io/v1beta1" "DataVolume" "uds-labs-vms"`,
+		"if not $existing",
+		"helm.sh/resource-policy: keep",
+		"CDI rejects every DataVolume spec update",
+	} {
+		if !strings.Contains(template, required) {
+			t.Fatalf("golden DataVolume template must contain %q", required)
 		}
 	}
 }
@@ -348,6 +405,7 @@ func TestCanonicalBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	for _, variable := range []string{
 		"KUBEVIRT_OPERATOR_NODE_PLACEMENT", "KUBEVIRT_INFRA_NODE_PLACEMENT", "KUBEVIRT_WORKLOAD_NODE_PLACEMENT",
 		"OPERATOR_NODE_PLACEMENT", "INFRA_NODE_PLACEMENT", "WORKLOAD_NODE_PLACEMENT",
+		"LAB_SERVER_NODE_PLACEMENT", "LAB_OPERATOR_NODE_PLACEMENT", "LAB_VMI_NODE_PLACEMENT",
 	} {
 		if !strings.Contains(bundle, "name: "+variable) {
 			t.Errorf("development bundle does not expose placement variable %q", variable)
@@ -363,6 +421,7 @@ func TestCanonicalBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	for _, variable := range []string{
 		"KUBEVIRT_OPERATOR_NODE_PLACEMENT:", "KUBEVIRT_INFRA_NODE_PLACEMENT:", "KUBEVIRT_WORKLOAD_NODE_PLACEMENT:",
 		"OPERATOR_NODE_PLACEMENT:", "INFRA_NODE_PLACEMENT:", "WORKLOAD_NODE_PLACEMENT:",
+		"LAB_SERVER_NODE_PLACEMENT:", "LAB_OPERATOR_NODE_PLACEMENT:", "LAB_VMI_NODE_PLACEMENT:",
 	} {
 		if !strings.Contains(example, variable) {
 			t.Errorf("portable deployment config example is missing %q", variable)
@@ -385,8 +444,18 @@ func TestCanonicalBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 	}
 }
 
-func TestCanonicalBundleUsesPublishedInfrastructureAndDevApplication(t *testing.T) {
+func TestCanonicalBundleUsesPublishedInfrastructureAndVersionedApplication(t *testing.T) {
 	bundle := string(mustReadFile(t, "bundle/uds-bundle.yaml"))
+	var config struct {
+		Metadata struct {
+			Version string `yaml:"version"`
+		} `yaml:"metadata"`
+		Packages []struct {
+			Name string `yaml:"name"`
+			Ref  string `yaml:"ref"`
+		} `yaml:"packages"`
+	}
+	readYAML(t, "bundle/uds-bundle.yaml", &config)
 	for _, forbidden := range []string{"path: ../kubevirt", "path: ../cdi", "bundle/local", "kubernetes.azure.com/agentpool"} {
 		if strings.Contains(bundle, forbidden) {
 			t.Fatalf("canonical bundle contains forbidden local or environment-specific value %q", forbidden)
@@ -397,10 +466,14 @@ func TestCanonicalBundleUsesPublishedInfrastructureAndDevApplication(t *testing.
 		"repository: ghcr.io/uds-packages/cdi",
 		"path: ../packages/vm-images",
 		"path: ../",
-		"ref: dev",
 	} {
 		if !strings.Contains(bundle, required) {
 			t.Fatalf("canonical bundle is missing %q", required)
+		}
+	}
+	for _, pkg := range config.Packages {
+		if pkg.Name == "uds-labs" && pkg.Ref != config.Metadata.Version {
+			t.Fatalf("bundle uds-labs ref %q does not match bundle version %q", pkg.Ref, config.Metadata.Version)
 		}
 	}
 
@@ -579,11 +652,14 @@ func TestApplicationImageAndVersionsStayConsistent(t *testing.T) {
 		if component.Name != "uds-labs" {
 			continue
 		}
-		if len(component.Images) != 1 {
-			t.Fatalf("uds-labs component must package exactly one application image, got %d", len(component.Images))
+		if len(component.Images) != 2 {
+			t.Fatalf("uds-labs component must package the application and capacity-bootstrap images, got %d", len(component.Images))
 		}
 		if component.Images[0] != values.Image {
-			t.Fatalf("Zarf image %q differs from chart image %q", component.Images[0], values.Image)
+			t.Fatalf("Zarf application image %q differs from chart image %q", component.Images[0], values.Image)
+		}
+		if component.Images[1] != "registry.k8s.io/pause:3.10" {
+			t.Fatalf("Zarf capacity-bootstrap image = %q, want registry.k8s.io/pause:3.10", component.Images[1])
 		}
 		if !strings.HasPrefix(values.Image, "ghcr.io/defenseunicorns-labs/") {
 			t.Fatalf("application image must use defenseunicorns-labs GHCR, got %q", values.Image)
@@ -591,19 +667,96 @@ func TestApplicationImageAndVersionsStayConsistent(t *testing.T) {
 		if strings.HasSuffix(values.Image, ":latest") {
 			t.Fatal("application image must use an immutable version tag")
 		}
-		if pkg.Metadata.Version != "dev" {
-			t.Fatalf("development package metadata version = %q, want dev", pkg.Metadata.Version)
-		}
 		if len(component.Charts) != 1 || component.Charts[0].Version != chart.Version {
 			t.Fatalf("Zarf chart version %q must match chart/Chart.yaml version %q", component.Charts[0].Version, chart.Version)
 		}
 		if chart.AppVersion == "" {
 			t.Fatal("chart appVersion must be set")
 		}
+		if pkg.Metadata.Version != "dev" {
+			wantImage := "ghcr.io/defenseunicorns-labs/uds-labs:" + pkg.Metadata.Version
+			if values.Image != wantImage {
+				t.Fatalf("release image %q, want %q", values.Image, wantImage)
+			}
+			if chart.Version != pkg.Metadata.Version || chart.AppVersion != pkg.Metadata.Version {
+				t.Fatalf("release chart versions = version:%q appVersion:%q, want %q", chart.Version, chart.AppVersion, pkg.Metadata.Version)
+			}
+		}
 		return
 	}
 
 	t.Fatal("application package has no uds-labs component")
+}
+
+func TestReleasePreparationSynchronizesRepositoryOwnedArtifacts(t *testing.T) {
+	contents := string(mustReadFile(t, "tasks/release.yaml"))
+	for _, required := range []string{
+		"uds-pk release update-yaml",
+		"chart/Chart.yaml",
+		"chart/values.yaml",
+		"bundle/uds-bundle.yaml",
+		"ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("release preparation is missing %q", required)
+		}
+	}
+}
+
+func TestReleasePublisherUsesTheBuiltArchiveVersionAndFlavor(t *testing.T) {
+	contents := string(mustReadFile(t, "tasks.yaml"))
+	for _, required := range []string{
+		"name: PACKAGE_VERSION",
+		"task: publish:release-please-publish",
+		"version: ${{ .variables.PACKAGE_VERSION }}",
+		"task: publish:uds-pk-publish",
+		"flavor: ${{ .inputs.flavor }}",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("release publisher is missing %q", required)
+		}
+	}
+}
+
+func TestReleasePromotesOneValidatedArchive(t *testing.T) {
+	contents := string(mustReadFile(t, "tasks.yaml"))
+	start := strings.Index(contents, "- name: release")
+	if start < 0 {
+		t.Fatal("release flow is missing the release task")
+	}
+	contents = contents[start:]
+	markers := []string{
+		"- name: release",
+		"Attest repository lint",
+		"Run security scans",
+		"Build the application image used by the Zarf package",
+		"Build the signed Zarf package",
+		"Record the exact Zarf archive produced for this release",
+		"Validate the built package on k3d before publication",
+		"Publish the validated release archive to GHCR and create the GitHub release",
+		"Vouch the package and attestations to CAT",
+		"Publish the vouched release archive to the UDS Proving Ground registry",
+	}
+	previous := -1
+	for _, marker := range markers {
+		index := strings.Index(contents, marker)
+		if index < 0 {
+			t.Fatalf("release flow is missing %q", marker)
+		}
+		if index <= previous {
+			t.Fatalf("release step %q is out of order", marker)
+		}
+		previous = index
+	}
+	if !strings.Contains(contents, "zarf_package: ${{ .variables.PACKAGE_ARCHIVE }}") {
+		t.Fatal("release must publish the explicitly recorded Zarf archive")
+	}
+	if _, err := os.Stat(".github/workflows/release.yaml"); err != nil {
+		t.Fatalf("primary release workflow is missing: %v", err)
+	}
+	if _, err := os.Stat(".github/workflows/udm-release.yaml"); !os.IsNotExist(err) {
+		t.Fatalf("legacy UDM release workflow must be removed (err: %v)", err)
+	}
 }
 
 func readYAML(t *testing.T, path string, target any) {
