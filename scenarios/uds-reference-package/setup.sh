@@ -39,9 +39,7 @@ git clone --depth 1 https://github.com/uds-packages/reference-package /root/refe
   >> /var/log/lab-setup/uds-setup.log 2>&1
 log "Clone done."
 
-# Mark lab ready — user can access terminal while background work continues
-touch /var/log/lab-setup/ready
-log "Cluster up — lab terminal ready."
+log "Cluster up — preparing the reference package before opening the terminal."
 
 # ── Background: wait for pods, patch bundle, pre-build zarf package ─────────────
 {
@@ -74,4 +72,5 @@ log "Cluster up — lab terminal ready."
   else
     log "Zarf pre-build failed — user will build fresh in step 4."
   fi
+  touch /var/log/lab-setup/ready
 } &

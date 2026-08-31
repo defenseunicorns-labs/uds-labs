@@ -257,6 +257,8 @@ func lsStepRecords(in []labv1.StepRecord) []StepRecord {
 func lsToSession(ls *labv1.LabSession) *Session {
 	status := StatusProvisioning
 	switch ls.Status.Phase {
+	case labv1.PhaseRunning:
+		status = StatusRunning
 	case labv1.PhaseReady:
 		status = StatusReady
 	case labv1.PhasePaused:

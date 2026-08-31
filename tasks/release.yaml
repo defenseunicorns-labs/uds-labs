@@ -1,0 +1,74 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+# yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
+
+# Release preparation is the sole seam between Package Kit's release coordinate
+# and the repository-owned artifacts that must carry it.
+
+---
+
+tasks:
+  - name: prepare
+    description: Render one Package Kit release version into all UDS Labs artifacts
+    inputs:
+      flavor:
+        description: Package Kit release flavor to render
+        default: upstream
+    actions:
+      - description: Apply the Package Kit release coordinate
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          command -v uds-pk >/dev/null 2>&1 || {
+            echo "ERROR: uds-pk is required to prepare a release" >&2
+            exit 1
+          }
+          uds zarf tools yq --version >/dev/null
+          uds-pk release update-yaml "${{ .inputs.flavor }}"
+
+      - description: Synchronize the Labs package, image, chart, and bundle versions
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          VERSION="$(uds zarf tools yq -r '.metadata.version' zarf.yaml)"
+          [ -n "$VERSION" ] && [ "$VERSION" != "null" ] && [ "$VERSION" != "dev" ] || {
+            echo "ERROR: Package Kit did not render a release version into zarf.yaml" >&2
+            exit 1
+          }
+          IMAGE="ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
+          export VERSION IMAGE
+
+          uds zarf tools yq -i '
+            (.components[] | select(.name == "uds-labs").charts[] | select(.name == "uds-labs").version) = strenv(VERSION) |
+            (.components[] | select(.name == "uds-labs").images) |= map(
+              sub("^ghcr.io/defenseunicorns-labs/uds-labs:.*$", strenv(IMAGE))
+            )
+          ' zarf.yaml
+          uds zarf tools yq -i '.version = strenv(VERSION) | .appVersion = strenv(VERSION)' chart/Chart.yaml
+          uds zarf tools yq -i '.image = strenv(IMAGE)' chart/values.yaml
+          uds zarf tools yq -i '
+            .metadata.version = strenv(VERSION) |
+            (.packages[] | select(.name == "uds-labs").ref) = strenv(VERSION)
+          ' bundle/uds-bundle.yaml
+
+      - description: Verify every repository-owned release reference matches
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          VERSION="$(uds zarf tools yq -r '.metadata.version' zarf.yaml)"
+          IMAGE="ghcr.io/defenseunicorns-labs/uds-labs:${VERSION}"
+          fail() { echo "ERROR: $1" >&2; exit 1; }
+
+          [ "$(uds zarf tools yq -r '.components[] | select(.name == "uds-labs").charts[] | select(.name == "uds-labs").version' zarf.yaml)" = "$VERSION" ] || fail "Zarf chart version does not match $VERSION"
+          [ "$(uds zarf tools yq -r '.components[] | select(.name == "uds-labs").images[] | select(test("^ghcr.io/defenseunicorns-labs/uds-labs:"))' zarf.yaml)" = "$IMAGE" ] || fail "Zarf image does not match $IMAGE"
+          [ "$(uds zarf tools yq -r '.version' chart/Chart.yaml)" = "$VERSION" ] || fail "Chart version does not match $VERSION"
+          [ "$(uds zarf tools yq -r '.appVersion' chart/Chart.yaml)" = "$VERSION" ] || fail "Chart appVersion does not match $VERSION"
+          [ "$(uds zarf tools yq -r '.image' chart/values.yaml)" = "$IMAGE" ] || fail "Chart image does not match $IMAGE"
+          [ "$(uds zarf tools yq -r '.metadata.version' bundle/uds-bundle.yaml)" = "$VERSION" ] || fail "Bundle version does not match $VERSION"
+          [ "$(uds zarf tools yq -r '.packages[] | select(.name == "uds-labs").ref' bundle/uds-bundle.yaml)" = "$VERSION" ] || fail "Bundle uds-labs reference does not match $VERSION"

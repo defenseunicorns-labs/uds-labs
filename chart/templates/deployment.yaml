@@ -1,6 +1,5 @@
 # Copyright 2026 Defense Unicorns
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
-
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -83,6 +82,11 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  # The capacity bootstrap waits for node labels and KubeVirt device resources
+  # before it creates a VMI.
+  - apiGroups: [""]
+    resources: ["nodes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["cdi.kubevirt.io"]
     resources: ["datavolumes"]

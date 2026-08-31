@@ -7,6 +7,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -268,6 +270,82 @@ func TestEnsureDataVolume_PropagatesStorageClass(t *testing.T) {
 	}
 }
 
+func TestEnsureCapacityBootstrapCreatesAutoscalerCompatiblePod(t *testing.T) {
+	s := testScheme(t)
+	fc := fake.NewClientBuilder().WithScheme(s).Build()
+	ls := testLabSession("capacity", "uds-labs-vms")
+	p := New(Config{
+		Client:       fc,
+		Namespace:    "uds-labs-vms",
+		NodeSelector: map[string]string{"kubernetes.azure.com/agentpool": "isv"},
+		Tolerations:  []corev1.Toleration{{Key: "workload", Value: "isv", Effect: corev1.TaintEffectNoSchedule}},
+	})
+
+	ready, message, err := p.ensureCapacityBootstrap(context.Background(), ls, "lab-capacity", map[string]string{sessionLabel: "capacity"}, sizing.Spec{CPU: "4", Memory: "8Gi"})
+	if err != nil || ready || message == "" {
+		t.Fatalf("initial capacity bootstrap = ready:%t message:%q err:%v, want pending", ready, message, err)
+	}
+
+	pod := &corev1.Pod{}
+	if err := fc.Get(context.Background(), client.ObjectKey{Namespace: "uds-labs-vms", Name: "lab-capacity" + capacityBootstrapSuffix}, pod); err != nil {
+		t.Fatalf("get capacity bootstrap Pod: %v", err)
+	}
+	if pod.Spec.NodeSelector["kubernetes.azure.com/agentpool"] != "isv" || len(pod.Spec.Tolerations) != 1 {
+		t.Fatalf("bootstrap placement = selector:%v tolerations:%v", pod.Spec.NodeSelector, pod.Spec.Tolerations)
+	}
+	if pod.Labels[workloadLabel] != workloadLabelVMI || pod.Spec.Affinity == nil || len(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 1 {
+		t.Fatalf("bootstrap must reserve a distinct Lab node: labels=%v affinity=%+v", pod.Labels, pod.Spec.Affinity)
+	}
+	requests := pod.Spec.Containers[0].Resources.Requests
+	cpu := requests[corev1.ResourceCPU]
+	if got := cpu.String(); got != "4" {
+		t.Errorf("bootstrap CPU request = %q, want 4", got)
+	}
+	memory := requests[corev1.ResourceMemory]
+	if got := memory.String(); got != "8704Mi" {
+		t.Errorf("bootstrap memory request = %q, want 8704Mi including KubeVirt overhead", got)
+	}
+	for _, device := range []corev1.ResourceName{"devices.kubevirt.io/kvm", "devices.kubevirt.io/tun", "devices.kubevirt.io/vhost-net"} {
+		if _, found := requests[device]; found {
+			t.Errorf("bootstrap must not request %q; that prevents cluster scale-from-zero", device)
+		}
+	}
+}
+
+func TestEnsureCapacityBootstrapReleasesKubeVirtReadyNode(t *testing.T) {
+	s := testScheme(t)
+	ls := testLabSession("ready-capacity", "uds-labs-vms")
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "lab-ready" + capacityBootstrapSuffix, Namespace: "uds-labs-vms", CreationTimestamp: metav1.Now()},
+		Spec:       corev1.PodSpec{NodeName: "isv-0"},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "isv-0", Labels: map[string]string{
+			"kubernetes.io/os":        "linux",
+			"kubevirt.io/schedulable": "true",
+		}},
+		Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{
+			"devices.kubevirt.io/kvm":       resource.MustParse("1"),
+			"devices.kubevirt.io/tun":       resource.MustParse("1"),
+			"devices.kubevirt.io/vhost-net": resource.MustParse("1"),
+		}},
+	}
+	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(ls, pod, node).Build()
+	p := New(Config{Client: fc, Namespace: "uds-labs-vms"})
+
+	ready, message, err := p.ensureCapacityBootstrap(context.Background(), ls, "lab-ready", map[string]string{sessionLabel: "ready-capacity"}, sizing.Spec{CPU: "4", Memory: "8Gi"})
+	if err != nil || !ready || message != "" {
+		t.Fatalf("ready capacity bootstrap = ready:%t message:%q err:%v, want ready", ready, message, err)
+	}
+	if ls.Annotations[capacityReadyAnnotation] != "true" {
+		t.Fatalf("capacity-ready annotation = %q, want true", ls.Annotations[capacityReadyAnnotation])
+	}
+	if err := fc.Get(context.Background(), client.ObjectKeyFromObject(pod), &corev1.Pod{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("bootstrap Pod still exists after capacity became ready: %v", err)
+	}
+}
+
 func TestEnsureVMI_OptsLauncherOutOfAmbientMesh(t *testing.T) {
 	s := testScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(s).Build()
@@ -347,10 +425,11 @@ func TestEnsureNetworkPolicy_AllowsDNSAndExcludesInternalCIDRs(t *testing.T) {
 func TestTeardownComputeRetainsSessionDataVolume(t *testing.T) {
 	s := testScheme(t)
 	ls := testLabSession("retain", "uds-labs-vms")
+	ls.Annotations = map[string]string{capacityReadyAnnotation: "true"}
 	name := resourceName(ls)
 	dv := &cdiv1.DataVolume{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "uds-labs-vms"}}
 	vmi := &kvv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "uds-labs-vms"}}
-	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(dv, vmi).Build()
+	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(ls, dv, vmi).Build()
 	p := New(Config{Client: fc, Namespace: "uds-labs-vms"})
 	stopped, err := p.TeardownCompute(context.Background(), ls)
 	if err != nil || !stopped {
@@ -358,5 +437,12 @@ func TestTeardownComputeRetainsSessionDataVolume(t *testing.T) {
 	}
 	if err := fc.Get(context.Background(), client.ObjectKeyFromObject(dv), &cdiv1.DataVolume{}); err != nil {
 		t.Fatalf("pause deleted retained DataVolume: %v", err)
+	}
+	gotSession := &labv1.LabSession{}
+	if err := fc.Get(context.Background(), client.ObjectKeyFromObject(ls), gotSession); err != nil {
+		t.Fatal(err)
+	}
+	if gotSession.Annotations[capacityReadyAnnotation] != "" {
+		t.Fatalf("pause retained capacity-ready state: %v", gotSession.Annotations)
 	}
 }

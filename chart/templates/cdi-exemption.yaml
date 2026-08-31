@@ -13,7 +13,7 @@ spec:
       matcher:
         kind: pod
         namespace: {{ .Values.vmNamespace }}
-        name: ^(cdi-(upload|clone-source)-.*|[0-9a-f-]{36}-source-pod)$
+        name: ^(cdi-(upload|clone-source)-.*|importer-.*|[0-9a-f-]{36}-source-pod)$
       title: UDS Labs CDI clone traffic overrides
       description: >-
         CDI creates upload target Pods and UUID-named clone source Pods in the

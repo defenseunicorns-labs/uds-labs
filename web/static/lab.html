@@ -12,6 +12,7 @@
     <a class="logo" href="/">UDS Labs</a>
     <span id="scenario-title" style="color:var(--text-muted);font-size:13px;"></span>
     <span style="flex:1"></span>
+    <span id="build-version" style="color:var(--text-muted);font-size:11px;" title="Labs build"></span>
     <span class="timer" id="timer">--:--</span>
     <button class="btn btn-primary" id="resume-btn" onclick="resumeLab()" style="display:none;" title="Resume your VM from where you left off">Resume</button>
     <button class="btn btn-danger" id="end-btn" onclick="confirmEnd()">End Lab</button>
@@ -118,6 +119,8 @@
     let steps = [];
     let currentStep = 0;
     let labReady = false;
+    let terminalOpened = false;
+    let terminalRetryTimer = null;
     let stepVerified = {};
     let expiresAt = null;
     let timerInterval = null;
@@ -132,6 +135,9 @@
     // ── Init ────────────────────────────────────────────────────────────────
     async function init() {
       if (!SESSION || !SCENARIO) { location.href = '/'; return; }
+      fetch('/api/version').then(r => r.json()).then(({version}) => {
+        document.getElementById('build-version').textContent = version || '';
+      }).catch(() => {});
       const sc = await fetch(`/api/scenarios/${SCENARIO}`).then(r => r.json());
       document.getElementById('scenario-title').textContent = sc.title || SCENARIO;
       steps = sc.steps || [];
@@ -162,6 +168,7 @@
       tabs.push({ id, iframe, btn });
       switchTab(tabs.length - 1);
       document.getElementById('tab-add').disabled = tabs.length >= MAX_TABS;
+      return tabs[tabs.length - 1];
     }
 
     function switchTab(idx) {
@@ -194,6 +201,31 @@
       document.getElementById('tab-add').disabled = tabs.length >= MAX_TABS;
     }
 
+    function openSetupTerminal() {
+      if (terminalOpened) return;
+      terminalOpened = true;
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('terminal-status').textContent = 'Connecting…';
+
+      // PhaseRunning is published as soon as the VMI and Service exist. That
+      // can precede ttyd by a few seconds. Do not create the iframe until the
+      // proxy can reach ttyd; a one-shot 503 is otherwise rendered as a black
+      // iframe and is not retried when the session later becomes Ready.
+      const waitForTerminal = async () => {
+        try {
+          const response = await fetch(`/t/${SESSION}/`, { cache: 'no-store' });
+          if (response.ok) {
+            addTab();
+            return;
+          }
+        } catch (_) {
+          // The VM/service is still starting.
+        }
+        terminalRetryTimer = setTimeout(waitForTerminal, 2000);
+      };
+      waitForTerminal();
+    }
+
     // ── Session polling ─────────────────────────────────────────────────────
     async function pollSession() {
       pollInterval = setInterval(async () => {
@@ -206,6 +238,12 @@
         }
 
         const resumeBtn = document.getElementById('resume-btn');
+
+        if (sess.status === 'running') {
+          // ttyd is useful before setup completes: Terminal 1 tails the live
+          // bootstrap log while the rest of the UI remains locked.
+          openSetupTerminal();
+        }
 
         if (sess.status === 'ready') {
           clearInterval(pollInterval);
@@ -220,7 +258,7 @@
           }
           resumeBtn.style.display = 'none';
           showStep(currentStep); // re-render to enable nav buttons
-          addTab(); // open first tab
+          openSetupTerminal(); // open first tab (or reuse the running-state tab)
           if (sess.browser_enabled) startServicesPoll();
         } else if (sess.status === 'paused') {
           clearInterval(pollInterval);

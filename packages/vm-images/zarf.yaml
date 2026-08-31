@@ -4,7 +4,7 @@ kind: ZarfPackageConfig
 metadata:
   name: uds-labs-vm-images
   description: Lab playground VM images served to CDI from Zarf-managed Pods
-  version: 0.4.1
+  version: 0.4.3
 
 components:
   - name: vm-image-server
@@ -20,7 +20,7 @@ components:
     charts:
       - name: vm-image-server
         localPath: chart
-        version: 0.4.1
+        version: 0.4.3
         namespace: uds-labs-vms
         valuesFiles:
           - chart/values-image-servers.yaml
@@ -50,7 +50,7 @@ components:
     charts:
       - name: golden-pvcs
         localPath: chart
-        version: 0.4.1
+        version: 0.4.3
         namespace: uds-labs-vms
         valuesFiles:
           - chart/values-golden-pvcs.yaml
