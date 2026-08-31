@@ -109,7 +109,8 @@ if [ ! -f /var/log/lab-setup/ready ]; then
   echo "  └─────────────────────────────────────────────┘"
   echo ""
 
-  tail -f /var/log/lab-setup/uds-setup.log &
+  # Replay setup output written before the terminal attached, then follow it.
+  tail -n +1 -F /var/log/lab-setup/uds-setup.log &
   TAIL_PID=$!
 
   while [ ! -f /var/log/lab-setup/ready ]; do
@@ -119,7 +120,8 @@ if [ ! -f /var/log/lab-setup/ready ]; then
   kill $TAIL_PID 2>/dev/null
   wait $TAIL_PID 2>/dev/null
 
-  clear
+  # Do not clear: `clear` erases tmux history and makes late terminal
+  # connections look blank even though setup output was produced.
   echo ""
   echo "  ┌─────────────────────────────────────────────┐"
   echo "  │  Lab ready!                                 │"

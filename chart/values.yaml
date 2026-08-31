@@ -2,19 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
 
 domain: uds.dev
-image: ghcr.io/defenseunicorns-labs/uds-labs:0.4.1
+image: ghcr.io/defenseunicorns-labs/uds-labs:v0.6.0-uds.2
 # Zarf's transformed tag is stable for a given source reference. Always check
 # the package registry so same-version local redeploys run the rebuilt image.
 imagePullPolicy: Always
 vmNamespace: uds-labs-vms
 sessionTTLMinutes: 240
 maxActiveSessions: 4
-
 # The operator is disabled only for package-level k3d tests where KubeVirt and
 # CDI are intentionally absent. Production and local E2E deployments keep it enabled.
 operator:
   enabled: true
-
 # Portable scheduling controls. Environment-specific labels and taints belong
 # in bundle/CustomerDeployment overrides, not these defaults.
 serverPlacement:
@@ -29,7 +27,6 @@ vmiPlacement:
   nodeSelector: {}
   affinity: {}
   tolerations: []
-
 # KubeVirt-only: golden PVC names that CDI clones per Session.
 goldenPVCs:
   base: golden-base
@@ -42,7 +39,6 @@ goldenPVCDiskSize: 40Gi
 # Empty preserves portability by using the cluster default. AKS integration
 # overrides this to managed-csi-premium.
 storageClass: ""
-
 # Public internet remains available, but these ranges are excluded. Add the
 # cluster pod/service, VNet, and organization-internal CIDRs per environment.
 blockedEgressCIDRs:
@@ -51,7 +47,6 @@ blockedEgressCIDRs:
   - 192.168.0.0/16
   - 169.254.0.0/16
   - 168.63.129.16/32
-
 # UDS Core enforces membership before requests reach the application.
 auth:
   allowedGroups: []

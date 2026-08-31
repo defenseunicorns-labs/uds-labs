@@ -27,6 +27,7 @@ includes:
   - publish: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.28.0/tasks/publish.yaml
   - quality: tasks/quality.yaml
   - test: tasks/test.yaml
+  - release-tasks: tasks/release.yaml
   - images: tasks/images.yaml
   - cluster: tasks/cluster.yaml
   - access: tasks/access.yaml
@@ -130,7 +131,7 @@ tasks:
         description: Path to uds-core qcow2
         default: packer/output/uds-core/lab-playground-uds-core.qcow2
       tag:
-        description: Image tag (defaults to package version)
+        description: VM image tag (defaults to the VM image chart's imageTag)
         default: ""
     actions:
       - task: images:build-vm-images
@@ -144,7 +145,7 @@ tasks:
     description: Push VM image server container images to ghcr.io
     inputs:
       tag:
-        description: Image tag to push (defaults to package version)
+        description: VM image tag to push (defaults to the VM image chart's imageTag)
         default: ""
     actions:
       - task: images:push-vm-images
@@ -158,8 +159,14 @@ tasks:
 
   - name: build-image
     description: Build the uds-labs Docker image tagged for ghcr.io
+    inputs:
+      build_version:
+        description: Version shown in the UI and embedded in the binaries
+        default: ""
     actions:
       - task: images:build-image
+        with:
+          build_version: ${{ .inputs.build_version }}
 
   - name: push-all
     description: Push uds-labs and VM image server containers to ghcr.io
@@ -560,7 +567,20 @@ tasks:
   # release contract while preserving the lab-specific image/package build.
   - name: publish-package
     description: Build, vouch to CAT, and publish the UDS Labs Zarf package
+    inputs:
+      flavor:
+        description: Package flavor to build and publish
+        default: upstream
     actions:
+      - task: release-tasks:prepare
+        with:
+          flavor: ${{ .inputs.flavor }}
+
+      - description: Read the release version used in the Zarf archive filename
+        cmd: uds zarf tools yq -r '.metadata.version' zarf.yaml
+        setVariables:
+          - name: PACKAGE_VERSION
+
       - task: actions:determine-arch
 
       - description: Generate the CAT Fulcio token for a signed package build
@@ -573,6 +593,8 @@ tasks:
 
       - description: Build the application image using the zarf.yaml image reference
         task: images:build-image
+        with:
+          build_version: ${{ .variables.PACKAGE_VERSION }}
 
       - description: Create a signed Zarf package for CAT
         if: ${{ and (ne .variables.OLM_CAT "") (ne .variables.OLM_ORG "") }}
@@ -580,7 +602,7 @@ tasks:
         with:
           zarf_path: .
           architecture: ${{ .variables.ARCH }}
-          zarf_flavor: ${{ .variables.FLAVOR }}
+          zarf_flavor: ${{ .inputs.flavor }}
           witness_workingdir: .
 
       - description: Create an unsigned package for local runs without CAT
@@ -589,7 +611,7 @@ tasks:
         with:
           zarf_path: .
           architecture: ${{ .variables.ARCH }}
-          zarf_flavor: ${{ .variables.FLAVOR }}
+          zarf_flavor: ${{ .inputs.flavor }}
           enable_sigstore: "false"
           witness_workingdir: .
 
@@ -605,16 +627,34 @@ tasks:
           attestations: zarf-create-witness.json
           test_directory: ""
 
-      - description: Publish the package to GHCR using the standard UDS package task
-        task: publish:package
+      # The uds-common dispatcher defaults the archive version to ${VERSION},
+      # which is unset after Package Kit renders zarf.yaml. Select the concrete
+      # publisher here so both direct and workflow releases use the archive we built.
+      - description: Publish a release-please package to GHCR
+        if: ${{ eq .variables.ENABLE_UDS_PK "false" }}
+        task: publish:release-please-publish
         with:
+          path: .
+          version: ${{ .variables.PACKAGE_VERSION }}
+          architecture: ${{ .variables.ARCH }}
           team: uds
+          name: uds-labs
+          flavor: ${{ .inputs.flavor }}
 
-  # UDS Proving Ground onboarding pipeline. This remains separate from the
-  # uds-common GHCR release task because CAT/Witness, vouch, and the Proving
-  # Ground registry use the udm-common compliance flow.
-  - name: udm-publish
-    description: Onboard, attest, vouch, and publish the package to UDS Proving Ground
+      - description: Publish a Package Kit release to GHCR
+        if: ${{ eq .variables.ENABLE_UDS_PK "true" }}
+        task: publish:uds-pk-publish
+        with:
+          path: .
+          architecture: ${{ .variables.ARCH }}
+          team: uds
+          name: uds-labs
+          flavor: ${{ .inputs.flavor }}
+
+  # Primary release pipeline: UDM Common provides compliance and promotion,
+  # while the validated Zarf archive is published to GHCR before UDS Proving Ground.
+  - name: release
+    description: Build, attest, vouch, and promote the package through the release registries
     inputs:
       github_token:
         description: GitHub token used to install OLM from GHCR
@@ -641,6 +681,15 @@ tasks:
         description: Package architecture
         default: amd64
     actions:
+      - task: release-tasks:prepare
+        with:
+          flavor: upstream
+
+      - description: Read the release version for the build metadata
+        cmd: uds zarf tools yq -r '.metadata.version' zarf.yaml
+        setVariables:
+          - name: PACKAGE_VERSION
+
       - description: Generate Fulcio token for attested tasks
         task: olm:generate-fulcio-token
         with:
@@ -659,6 +708,8 @@ tasks:
 
       - description: Build the application image used by the Zarf package
         task: images:build-image
+        with:
+          build_version: ${{ .variables.PACKAGE_VERSION }}
 
       - description: Refresh Fulcio token before the package build
         task: olm:generate-fulcio-token
@@ -672,10 +723,30 @@ tasks:
         with:
           zarf_path: .
           architecture: ${{ .inputs.architecture }}
+          zarf_flavor: upstream
           witness_workingdir: .
 
-      - description: Validate the built package on k3d before UDS Proving Ground publication
+      - description: Record the exact Zarf archive produced for this release
+        cmd: |
+          set -euo pipefail
+          VERSION="$(uds-pk release show upstream)"
+          ARCHIVE="./zarf-package-uds-labs-${{ .inputs.architecture }}-${VERSION}.tar.zst"
+          [ -f "$ARCHIVE" ] || { echo "ERROR: expected release archive $ARCHIVE" >&2; exit 1; }
+          printf '%s\n' "$ARCHIVE"
+        setVariables:
+          - name: PACKAGE_ARCHIVE
+
+      - description: Validate the built package on k3d before publication
         task: validate-package-artifact
+
+      - description: Publish the validated release archive to GHCR and create the GitHub release
+        task: publish:uds-pk-publish
+        with:
+          path: .
+          architecture: ${{ .inputs.architecture }}
+          team: uds
+          name: uds-labs
+          flavor: upstream
 
       - description: Vouch the package and attestations to CAT
         task: vouch:package
@@ -686,11 +757,12 @@ tasks:
           sarif_files: gitleaks.sarif.json,opengrep.sarif.json
           test_directory: ""
 
-      - description: Publish the vouched package to the UDS Proving Ground registry
+      - description: Publish the vouched release archive to the UDS Proving Ground registry
         task: udm-publish-tasks:zarf-package
         with:
           registry: ${{ .inputs.registry }}
           registry_org: ${{ .inputs.registry_org }}
+          zarf_package: ${{ .variables.PACKAGE_ARCHIVE }}
           registry_user_id: ${{ .inputs.registry_user_id }}
           registry_password: ${{ .inputs.registry_password }}
 

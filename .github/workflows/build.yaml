@@ -1,7 +1,7 @@
 name: CI
 
 # PR and branch CI validates source quality. Release publication is handled by
-# release.yaml through the standard uds-common callable-publish workflow.
+# release.yaml through the primary Package Kit release workflow.
 on:
   push:
     branches: [master]

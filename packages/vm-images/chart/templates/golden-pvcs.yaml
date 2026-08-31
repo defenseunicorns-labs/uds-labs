@@ -2,13 +2,21 @@
 {{- $storageClass := .Values.goldenPVCs.storageClass }}
 {{- $volumeMode := .Values.goldenPVCs.volumeMode }}
 {{- range $name, $image := .Values.images }}
+{{- $dataVolumeName := printf "golden-%s" $name }}
+{{- $existing := lookup "cdi.kubevirt.io/v1beta1" "DataVolume" "uds-labs-vms" $dataVolumeName }}
+{{- /* CDI rejects every DataVolume spec update. Golden disks are versioned in their
+      own package, so retain a completed disk when the Labs application upgrades. */}}
+{{- if not $existing }}
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: golden-{{ $name }}
+  name: {{ $dataVolumeName }}
   namespace: uds-labs-vms
   annotations:
     cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+    # The next upgrade omits an existing immutable DataVolume via lookup. Keep
+    # it rather than letting Helm delete a resource absent from that manifest.
+    helm.sh/resource-policy: keep
   labels:
     labs.uds.dev/golden-pvc: "true"
     labs.uds.dev/tier: {{ $name }}
@@ -26,5 +34,6 @@ spec:
       requests:
         storage: {{ $image.size }}
 ---
+{{- end }}
 {{- end }}
 {{- end }}

@@ -6,13 +6,14 @@ COPY web/ide-src/ ./
 RUN npm run build
 
 FROM golang:1.26-alpine AS build
+ARG BUILD_VERSION=dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
 COPY --from=ide-build /app/web/static/ide-assets/ ./web/static/ide-assets/
-RUN CGO_ENABLED=0 GOOS=linux go build -o /lab-server ./cmd/labserver
-RUN CGO_ENABLED=0 GOOS=linux go build -o /lab-operator ./cmd/laboperator
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X github.com/defenseunicorns-labs/uds-labs/internal/buildinfo.Version=${BUILD_VERSION}" -o /lab-server ./cmd/labserver
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X github.com/defenseunicorns-labs/uds-labs/internal/buildinfo.Version=${BUILD_VERSION}" -o /lab-operator ./cmd/laboperator
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /lab-server /lab-server

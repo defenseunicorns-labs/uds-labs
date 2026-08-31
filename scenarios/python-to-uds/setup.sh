@@ -86,8 +86,7 @@ image: myapp:dev
 domain: uds.dev
 EOF
 
-log "Scaffold complete — marking lab ready."
-touch /var/log/lab-setup/ready
+log "Scaffold complete."
 
 # ── Background: wait for pods, build Docker image ──────────────────────────────
 # Zarf picks up images directly from the local Docker daemon (no registry needed).
@@ -104,4 +103,5 @@ touch /var/log/lab-setup/ready
   docker build -t myapp:dev /root/myapp --network host >> /var/log/lab-setup/uds-setup.log 2>&1
   touch /var/log/lab-setup/image-ready
   log "myapp:dev built — lab fully ready."
+  touch /var/log/lab-setup/ready
 } &
