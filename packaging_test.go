@@ -339,6 +339,28 @@ func TestVMImageComponentsInDedicatedPackage(t *testing.T) {
 	}
 }
 
+func TestCDIExemptionIsOwnedByGoldenPVCComponent(t *testing.T) {
+	serverCmd := exec.Command("helm", "template", "vm-images", "packages/vm-images/chart",
+		"--set", "imageServers.enabled=true", "--set", "goldenPVCs.enabled=false")
+	serverOut, err := serverCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("render image-server chart: %v\n%s", err, serverOut)
+	}
+	if strings.Contains(string(serverOut), "name: uds-labs-vm-images-cdi") {
+		t.Fatal("image-server component must not own the CDI exemption")
+	}
+
+	goldenCmd := exec.Command("helm", "template", "vm-images", "packages/vm-images/chart",
+		"--set", "imageServers.enabled=false", "--set", "goldenPVCs.enabled=true")
+	goldenOut, err := goldenCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("render golden-pvcs chart: %v\n%s", err, goldenOut)
+	}
+	if !strings.Contains(string(goldenOut), "name: uds-labs-vm-images-cdi") {
+		t.Fatal("golden-pvcs component must own the CDI exemption")
+	}
+}
+
 func TestGoldenDataVolumesAreNotReconciledAfterImport(t *testing.T) {
 	template := string(mustReadFile(t, "packages/vm-images/chart/templates/golden-pvcs.yaml"))
 	for _, required := range []string{
@@ -505,67 +527,6 @@ func TestCanonicalBundleUsesPublishedInfrastructureAndVersionedApplication(t *te
 	for _, required := range []string{"authservice:", "replicaCount: 1", "insecureAdminPasswordGeneration:"} {
 		if !strings.Contains(identityValues, required) {
 			t.Errorf("local UDS Core identity values are missing %q", required)
-		}
-	}
-}
-
-func TestDeployStackPatchesAndChecksDemoRoutesAfterPackageReconciliation(t *testing.T) {
-	definitions := taskDefinitions(t)
-	for _, required := range []string{"local-e2e", "deploy-stack", "patch-demo-routes", "smoke-test"} {
-		if definitions[required] == nil {
-			t.Fatalf("task files must define %q", required)
-		}
-	}
-
-	actionPositions := func(task *taskDefinition) map[string]int {
-		positions := map[string]int{}
-		for i, action := range task.Actions {
-			if action.Task != "" {
-				name := action.Task
-				if separator := strings.LastIndex(name, ":"); separator >= 0 {
-					name = name[separator+1:]
-				}
-				positions[name] = i
-			}
-		}
-		return positions
-	}
-	localPositions := actionPositions(definitions["local-e2e"])
-	for _, required := range []string{"deploy-stack", "patch-coredns"} {
-		if _, exists := localPositions[required]; !exists {
-			t.Fatalf("local-e2e is missing task %q", required)
-		}
-	}
-	if localPositions["deploy-stack"] >= localPositions["patch-coredns"] {
-		t.Fatalf("local-e2e must deploy the stack before configuring local access; positions: %#v", localPositions)
-	}
-
-	deployPositions := actionPositions(definitions["deploy-stack"])
-	for _, required := range []string{"deploy-bundle", "patch-demo-routes", "wait-kubevirt"} {
-		if _, exists := deployPositions[required]; !exists {
-			t.Fatalf("deploy-stack is missing task %q", required)
-		}
-	}
-	if deployPositions["deploy-bundle"] >= deployPositions["patch-demo-routes"] ||
-		deployPositions["patch-demo-routes"] >= deployPositions["wait-kubevirt"] {
-		t.Fatalf("deploy-stack must patch demo routes immediately after bundle deployment; positions: %#v", deployPositions)
-	}
-
-	var patchCommands strings.Builder
-	for _, action := range definitions["patch-demo-routes"].Actions {
-		patchCommands.WriteString(action.Cmd)
-	}
-	if !strings.Contains(patchCommands.String(), ".status.observedGeneration") {
-		t.Fatal("patch-demo-routes must wait for the latest Package reconciliation before patching Pepr-managed policies")
-	}
-
-	var smokeCommands strings.Builder
-	for _, action := range definitions["smoke-test"].Actions {
-		smokeCommands.WriteString(action.Cmd)
-	}
-	for _, required := range []string{"uds-labs-authservice", "uds-labs-jwt-authz", "/api/demo-sessions"} {
-		if !strings.Contains(smokeCommands.String(), required) {
-			t.Fatalf("smoke-test does not verify demo-route policy fragment %q", required)
 		}
 	}
 }

@@ -92,9 +92,8 @@ uds run local-e2e
    directly onto bare k3s.
 4. Deploys the canonical bundle using published KubeVirt and CDI packages.
 5. Reuses the staged VM-image package, or pulls the matching version from GHCR.
-6. Restores demo-route auth exemptions after Package reconciliation.
-7. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
-8. Runs infrastructure, demo-route, and LabSession lifecycle smoke tests.
+6. Patches CoreDNS, starts the local TLS proxy, and creates the test user.
+7. Runs infrastructure and LabSession lifecycle smoke tests.
 
 For the standard k3d package-development loop, use `uds run dev`. It validates
 package installation and upgrades with the KubeVirt operator disabled because

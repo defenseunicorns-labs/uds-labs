@@ -1,0 +1,24 @@
+# Local k3s deployment config; do not use for staging/production.
+shared:
+  domain: uds.dev
+
+variables:
+  kubevirt:
+    VM_NAMESPACES:
+      - uds-labs-vms
+    KUBEVIRT_OPERATOR_NODE_PLACEMENT: &defaultPlacement
+      nodeSelector: {}
+      affinity: {}
+      tolerations: []
+    KUBEVIRT_INFRA_NODE_PLACEMENT: *defaultPlacement
+    KUBEVIRT_WORKLOAD_NODE_PLACEMENT: *defaultPlacement
+  cdi:
+    OPERATOR_NODE_PLACEMENT: *defaultPlacement
+    INFRA_NODE_PLACEMENT: *defaultPlacement
+    WORKLOAD_NODE_PLACEMENT: *defaultPlacement
+    WORKLOAD_NAMESPACES:
+      - uds-labs-vms
+  uds-labs:
+    LAB_SERVER_NODE_PLACEMENT: *defaultPlacement
+    LAB_OPERATOR_NODE_PLACEMENT: *defaultPlacement
+    LAB_VMI_NODE_PLACEMENT: *defaultPlacement

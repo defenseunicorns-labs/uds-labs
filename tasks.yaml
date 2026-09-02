@@ -372,21 +372,6 @@ tasks:
     actions:
       - task: cluster:verify-cluster
 
-  - name: patch-demo-routes
-    description: Run access:patch-demo-routes
-    inputs:
-      namespace:
-        description: Namespace containing the uds-labs Package CR
-        default: uds-labs
-      dry_run:
-        description: Print the planned operation without applying policy patches
-        default: "0"
-    actions:
-      - task: access:patch-demo-routes
-        with:
-          namespace: ${{ .inputs.namespace }}
-          dry_run: ${{ .inputs.dry_run }}
-
   - name: patch-coredns
     description: Patch CoreDNS to route *.uds.dev to MetalLB gateways
     actions:
@@ -509,7 +494,7 @@ tasks:
           vm_image_tag: ${{ .inputs.vm_image_tag }}
 
   - name: smoke-test
-    description: Verify golden PVCs, platform, authservice, and demo-route authorization
+    description: Verify golden PVCs, platform, and authservice
     actions:
       - task: workflow:smoke-test
 

@@ -10,14 +10,6 @@ spec:
     # Keycloak SSO via authservice.  There is no per-path bypass in the Package
     # spec — the Expose interface has no auth exclusion field (confirmed from
     # UDS Core TypeScript CRD).
-    #
-    # The self-service demo mode requires /demo and /api/demo-sessions to be
-    # reachable without SSO. The deploy-stack task patches the generated
-    # policies after bundle deployment. After direct Package CR changes, run
-    # `uds run patch-demo-routes` to restore the notPaths exclusions.
-    #
-    # This is a cluster-level operation that must be performed by a cluster
-    # admin until UDS Core adds per-path authservice bypass to the Package spec.
     - clientId: uds-labs
       name: UDS Labs
       redirectUris:
