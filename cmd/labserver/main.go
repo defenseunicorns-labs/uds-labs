@@ -994,21 +994,6 @@ func validServiceDNS(s string) bool {
 	return true
 }
 
-// isSafeHost returns true if h is a plain host[:port] with no scheme, path,
-// or other characters that could redirect the generated URL to an attacker host.
-func isSafeHost(h string) bool {
-	if h == "" {
-		return false
-	}
-	for _, c := range h {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') &&
-			(c < '0' || c > '9') && c != '-' && c != '.' && c != ':' && c != '[' && c != ']' {
-			return false
-		}
-	}
-	return true
-}
-
 // isSecureRequest returns true when the connection is HTTPS, either directly
 // or via a TLS-terminating proxy (X-Forwarded-Proto: https).
 func isSecureRequest(r *http.Request) bool {
