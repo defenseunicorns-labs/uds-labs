@@ -81,7 +81,7 @@ packages:
                 tolerations: []
   - name: uds-labs
     path: ../
-    ref: v0.6.0-uds.2-upstream
+    ref: v0.6.0-uds.2
     overrides:
       uds-labs:
         uds-labs:

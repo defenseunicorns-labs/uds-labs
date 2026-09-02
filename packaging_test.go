@@ -458,6 +458,8 @@ func TestCanonicalBundleOrdersDependenciesAndExposesPlacement(t *testing.T) {
 		"Reusing staged VM-image package",
 		`zarf package pull "oci://${REPOSITORY}:${VERSION}"`,
 		"local: ${{ .inputs.LOCAL_VM_IMAGES }}",
+		"BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}",
+		"default: bundle/uds-config-local.yaml",
 		"UDS_CONFIG=\"$CONFIG\" uds deploy",
 	} {
 		if !strings.Contains(tasks, required) {

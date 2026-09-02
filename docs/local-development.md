@@ -61,7 +61,8 @@ Input names are case-sensitive.
 
 The canonical [`bundle/uds-bundle.yaml`](../bundle/uds-bundle.yaml) is the
 only bundle. It uses published KubeVirt and CDI packages with portable placement
-defaults. Customize the ignored `bundle/uds-config.yaml` for an environment.
+defaults. `local-e2e` and `redeploy` use the tracked `bundle/uds-config-local.yaml` by
+default; generic deployment tasks use the ignored `bundle/uds-config.yaml`.
 
 Refresh sudo credentials immediately before a full run:
 
@@ -339,6 +340,7 @@ requires them.
 | `SKIP_BASE` | `0` | Skip rebuilding the base qcow2 when image building is enabled |
 | `SKIP_UDS_CORE` | `0` | Skip rebuilding the UDS Core qcow2 when image building is enabled |
 | `VM_IMAGE_TAG` | package version | Select the VM image-server tag |
+| `BUNDLE_CONFIG` | `bundle/uds-config-local.yaml` | Deploy-time bundle configuration |
 
 `cluster-up` remains a lower-level compatibility task. It does not install UDS
 Core or configure local browser access; prefer `local-e2e` for full testing.

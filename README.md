@@ -359,10 +359,12 @@ scenarios/      # lab scenario definitions
 
 ### Deployment configuration
 
-The default deployment bundle consumes the published KubeVirt and CDI UDS packages. It uses an
-ignored environment configuration copied from `bundle/uds-config.example.yaml`.
-The canonical bundle uses published infrastructure packages and an ignored
-environment-specific deployment config.
+The default deployment bundle consumes the published KubeVirt and CDI UDS packages. Generic
+bundle deployments use the ignored `bundle/uds-config.yaml`, copied from
+`bundle/uds-config.example.yaml`. The local E2E and redeploy workflows use the tracked portable
+`bundle/uds-config-local.yaml` by default; override them with `--with BUNDLE_CONFIG=...` when needed.
+Other deployment tasks use the ignored environment-specific config by default. The canonical bundle
+uses published infrastructure packages and deploy-time configuration.
 Package tarballs and environment configuration remain ignored build artifacts.
 
 ### Iterating on the operator
