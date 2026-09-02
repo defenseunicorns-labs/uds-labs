@@ -1,3 +1,4 @@
+{{- if .Values.goldenPVCs.enabled }}
 apiVersion: uds.dev/v1alpha1
 kind: Exemption
 metadata:
@@ -15,3 +16,4 @@ spec:
       description: >-
         CDI importer and clone Pods require Istio traffic-interception
         overrides while populating the golden VM disks.
+{{- end }}

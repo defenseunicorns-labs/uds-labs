@@ -245,12 +245,10 @@ Useful server environment variables:
 |---|---:|---|
 | `PORT` | `8080` | HTTP listen port |
 | `VM_NAMESPACE` | `uds-labs-vms` | Namespace containing lab VM resources |
-| `SERVER_NAMESPACE` | value of `VM_NAMESPACE` | Namespace containing server-owned resources |
 | `SESSION_TTL_MINUTES` | `60` | Session lifetime |
 | `SCENARIOS_DIR` | embedded scenarios | Read scenario files from disk |
 | `STATIC_DIR` | embedded web assets | Read static assets from disk |
 | `DEV_MODE` | `false` | Grant authenticated users development admin access |
-| `DEMO_TOKEN_HMAC_KEY` | unset | Enable demo-token routes when at least 32 bytes |
 
 ## Develop the browser IDE
 
@@ -316,7 +314,6 @@ requires them.
 | Task | What it does | Important inputs or notes |
 |---|---|---|
 | `deploy-bundle` | Deploys the newest canonical bundle | `config`; run `build-bundle` first |
-| `patch-demo-routes` | Restores unauthenticated demo-route exemptions | Called by `deploy-stack`; rerun after direct Package CR changes |
 | `patch-coredns` | Maps UDS hostnames to MetalLB gateways and restarts authservice | Existing deployed cluster required |
 | `create-test-session` | Creates a LabSession for operator lifecycle checks | `namespace`, `scenario_id`, `client_id`, `ttl_minutes`, `name` |
 | `create-test-user` | Creates the documented Keycloak test user | Calls shared `uds-setup:keycloak-user` |
@@ -324,7 +321,7 @@ requires them.
 | `start-proxy` | Starts the local nginx SNI proxy on ports 80 and 443 | Requires gateway LoadBalancer IPs |
 | `stop-proxy` | Stops the local nginx SNI proxy | Uses Docker Compose |
 | `redeploy` | Rebuilds and redeploys the canonical bundle without rebuilding infrastructure packages | `vm_image_tag` |
-| `smoke-test` | Checks golden PVCs, app pod, authservice, and demo-route policy exemptions | Returns nonzero on failure |
+| `smoke-test` | Checks golden PVCs, app pod, and authservice | Returns nonzero on failure |
 | `local-e2e` | Runs the supported bare-k3s end-to-end workflow | Defaults to `WIPE_CLUSTER=1`; see inputs below |
 | `dev` | Creates and deploys the package on k3d | Package-only checks; operator disabled |
 
@@ -397,17 +394,6 @@ Redeployments can replace CoreDNS settings. Reapply them:
 ```bash
 uds run patch-coredns
 uds run start-proxy
-```
-
-### Demo routes redirect to SSO
-
-`deploy-stack` restores route exemptions automatically after bundle deployment.
-Pepr can still overwrite them after a direct Package CR change; restore and
-verify them with:
-
-```bash
-uds run patch-demo-routes
-uds run smoke-test
 ```
 
 ### Golden PVC imports fail

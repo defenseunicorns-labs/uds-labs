@@ -54,7 +54,6 @@ tasks:
           kubectl -n uds-labs rollout restart deployment/uds-labs deployment/lab-operator
           kubectl -n uds-labs rollout status deployment/uds-labs --timeout=180s
           kubectl -n uds-labs rollout status deployment/lab-operator --timeout=180s
-      - task: access:patch-demo-routes
       - task: cluster:wait-kubevirt
       - task: cluster:verify-cluster
 
@@ -111,7 +110,7 @@ tasks:
   # Exits non-zero on any failure so CI and uds run local-e2e surface problems early.
 
   - name: smoke-test
-    description: Verify golden PVCs, platform, authservice, and demo-route authorization
+    description: Verify golden PVCs, platform, and authservice
     actions:
       - description: Check golden PVCs are Succeeded
         maxTotalSeconds: 1800
@@ -199,21 +198,6 @@ tasks:
             echo "  ⚠ authservice restarts: $RESTARTS — may indicate DNS/Keycloak issue"
             echo "    Check: kubectl logs -n authservice deploy/authservice"
           fi
-      - description: Check demo routes bypass authservice and JWT policies
-        maxTotalSeconds: 30
-        cmd: |
-          for policy in uds-labs-authservice uds-labs-jwt-authz; do
-            paths=$(kubectl get authorizationpolicy "$policy" -n uds-labs \
-              -o jsonpath='{.spec.rules[0].to[0].operation.notPaths[*]}' 2>/dev/null || true)
-            for path in "/demo" "/demo/*" "/api/demo-sessions"; do
-              if ! printf '%s\n' "$paths" | tr ' ' '\n' | grep -Fxq "$path"; then
-                echo "ERROR: AuthorizationPolicy/$policy does not exempt $path" >&2
-                echo "Run: uds run patch-demo-routes" >&2
-                exit 1
-              fi
-            done
-          done
-          echo "  ✔ demo routes bypass authservice and JWT policies"
 
   # ── Full local E2E workflow ───────────────────────────────────────────────────
   # Bare k3s → UDS Core → KubeVirt/CDI → VM images → UDS Labs → local access.
