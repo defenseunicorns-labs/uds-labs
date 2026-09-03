@@ -5,6 +5,36 @@ prerequisites:
   - "Basic Kubernetes familiarity"
 duration: 60
 difficulty: intermediate
+orientation:
+  mission: "Explore a running UDS Core cluster and see its platform services in action."
+  why: "Build confidence inspecting UDS Core, Istio, and Keycloak before using them in your own packages."
+  starting_point:
+    provided:
+      - "A temporary VM with a pre-deployed k3d UDS Core cluster"
+      - "Running UDS Core, Keycloak, and Istio services"
+      - "Terminal, IDE, and browser access"
+    learner_changes: []
+    not_required:
+      - "Installing UDS Core"
+      - "Creating a cluster"
+      - "A required deployment goal"
+  journey:
+    - title: "Welcome"
+      description: "Review the running platform and suggested inspection commands."
+      purpose: "Choose an experiment and learn where to find UDS Core resources and services."
+  success:
+    criteria:
+      - "You can inspect the running UDS Core cluster."
+      - "You can open the platform services in the VM browser."
+      - "You can experiment without affecting an external environment."
+    final_state: "You have an isolated, running UDS Core cluster ready for exploration."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "This is an open playground, not a guided exercise; there are no required checkpoints."
+    - "The VM is temporary and will be removed when you leave or when the lab expires."
 playground: true
 browser: true
 size: medium

@@ -6,6 +6,54 @@ prerequisites:
   - "Basic Kubernetes and Helm familiarity"
 duration: 60
 difficulty: intermediate
+orientation:
+  mission: "Turn a pre-containerized Python application into a deployable UDS package."
+  why: "Learn the repeatable boundary between application code, Kubernetes resources, Helm, UDS, Zarf, and bundle workflows."
+  starting_point:
+    provided:
+      - "A working Python application and container image"
+      - "A project workspace with the application source"
+      - "A UDS Core lab environment"
+    learner_changes:
+      - "Helm Deployment and Service templates"
+      - "UDS Package networking configuration"
+      - "Zarf package, bundle, and development task definitions"
+    not_required:
+      - "Writing the application itself"
+      - "Creating a Kubernetes cluster"
+      - "Cloud credentials or external services"
+  journey:
+    - title: "Meet the application"
+      description: "Inspect the Flask application, health endpoint, image, and port."
+      purpose: "Understand the workload contract before writing deployment resources."
+    - title: "Write the Helm chart"
+      description: "Define the Deployment and Service that run the application."
+      purpose: "Make the container runnable on Kubernetes."
+    - title: "Add the UDS Package"
+      description: "Declare network access and application exposure for UDS Core."
+      purpose: "Connect the Kubernetes workload to the UDS platform."
+    - title: "Create zarf.yaml"
+      description: "Package the Helm chart and application image with Zarf."
+      purpose: "Make the application portable for cluster deployment."
+    - title: "Compose the bundle"
+      description: "Add the package to a UDS bundle and create a development task."
+      purpose: "Build a repeatable workflow for deploying the package."
+    - title: "Deploy and verify"
+      description: "Run the task and verify the application in the live cluster."
+      purpose: "Confirm that the complete package works through the platform."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The application deploys successfully to the live UDS Core cluster."
+      - "The application health endpoint is reachable through the expected UDS path."
+    final_state: "The Python application is running as a stateless UDS package deployed through a repeatable bundle task."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when you leave or when the lab expires."
+    - "You will edit deployment and packaging files; the application source is already complete."
 browser: true
 image: uds-core
 size: medium

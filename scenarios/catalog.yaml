@@ -5,6 +5,7 @@ sections:
     items:
       - scenario: uds-reference-package
       - scenario: python-to-uds
+      - scenario: release-ledger
 
   - id: playgrounds
     title: Playgrounds

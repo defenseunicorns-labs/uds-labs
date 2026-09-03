@@ -12,11 +12,37 @@
     <a class="logo" href="/">UDS Labs</a>
     <span id="scenario-title" style="color:var(--text-muted);font-size:13px;"></span>
     <span style="flex:1"></span>
+    <button class="btn btn-ghost overview-nav-btn" id="overview-btn" onclick="openOverview()" style="display:none;" aria-label="Open scenario overview">ⓘ Overview</button>
     <span id="build-version" style="color:var(--text-muted);font-size:11px;" title="Labs build"></span>
     <span class="timer" id="timer">--:--</span>
     <button class="btn btn-primary" id="resume-btn" onclick="resumeLab()" style="display:none;" title="Resume your VM from where you left off">Resume</button>
     <button class="btn btn-danger" id="end-btn" onclick="confirmEnd()">End Lab</button>
   </nav>
+
+  <!-- First-time scenario orientation. The page sequence is fixed; scenarios provide the content. -->
+  <div id="overview-overlay" class="overview-overlay" role="dialog" aria-modal="true" aria-label="Scenario orientation" hidden>
+    <div class="overview-card">
+      <button class="overview-close" type="button" onclick="closeOverview()" aria-label="Close scenario orientation">×</button>
+      <div class="overview-progress">
+        <span class="overview-kicker">Before you begin</span>
+        <span id="overview-page-counter">1 of 5</span>
+      </div>
+      <div class="overview-progress-bar" aria-hidden="true"><span id="overview-progress-fill"></span></div>
+      <div id="overview-page" class="overview-page"></div>
+
+      <div class="overview-status" id="overview-status" role="status" aria-live="polite">
+        <span class="overview-status-dot"></span>
+        <span id="overview-status-text">Your lab environment is provisioning in the background. Read through the guide while it gets ready.</span>
+      </div>
+      <div class="overview-footer">
+        <button class="btn btn-ghost overview-skip" type="button" onclick="closeOverview()">Skip orientation</button>
+        <div class="overview-navigation">
+          <button class="btn btn-ghost" id="overview-back" type="button" onclick="previousOverviewPage()">← Back</button>
+          <button class="btn btn-primary" id="overview-next" type="button" onclick="nextOverviewPage()">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Teardown overlay -->
   <div id="teardown-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
@@ -116,6 +142,7 @@
     const SCENARIO = params.get('scenario');
     const MAX_TABS = 4;
 
+    let scenario = null;
     let steps = [];
     let currentStep = 0;
     let labReady = false;
@@ -139,12 +166,171 @@
         document.getElementById('build-version').textContent = version || '';
       }).catch(() => {});
       const sc = await fetch(`/api/scenarios/${SCENARIO}`).then(r => r.json());
+      if (sc.error) throw new Error(sc.error);
+      scenario = sc;
       document.getElementById('scenario-title').textContent = sc.title || SCENARIO;
+      renderOverview(sc);
       steps = sc.steps || [];
       renderDots();
       showStep(0);
       pollSession();
     }
+
+    // ── Scenario orientation ───────────────────────────────────────────────
+    const OVERVIEW_PAGES = 5;
+    let overviewPage = 0;
+    let sessionStatus = 'provisioning';
+
+    function listMarkup(items) {
+      return (items || []).map(item => `<li>${escapeHTML(item)}</li>`).join('');
+    }
+
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[char]));
+    }
+
+    function orientationPageMarkup(page) {
+      const o = scenario.orientation || {};
+      const start = o.starting_point || {};
+      const success = o.success || {};
+      const title = escapeHTML(scenario.title || SCENARIO);
+      const description = escapeHTML(scenario.description || '');
+      const mission = escapeHTML(o.mission || scenario.outcome || 'Work through the guided steps and verify your result.');
+      const why = escapeHTML(o.why || scenario.outcome || '');
+      const hasChecks = (scenario.steps || []).some(step => step.has_verify);
+
+      if (page === 0) return `
+        <div class="overview-kicker">Scenario orientation</div>
+        <div class="overview-heading">
+          <h1 id="overview-title">${title}</h1>
+          <div class="overview-badges">
+            <span class="overview-badge">${scenario.duration || '?'} min</span>
+            <span class="overview-badge">${escapeHTML(scenario.difficulty || '')}</span>
+          </div>
+        </div>
+        <p class="overview-description">${description}</p>
+        <div class="overview-callout">
+          <h2>Your mission</h2>
+          <p>${mission}</p>
+        </div>
+        <section class="overview-section">
+          <h2>Why this matters</h2>
+          <p>${why}</p>
+        </section>`;
+
+      if (page === 1) return `
+        <div class="overview-kicker">Starting point</div>
+        <h1>What you’re working with</h1>
+        <p class="overview-lead">This lab gives you a working foundation. You will connect and configure the pieces rather than build everything from scratch.</p>
+        <div class="overview-columns">
+          <section class="overview-section"><h2>Already provided</h2><ul class="overview-list">${listMarkup(start.provided)}</ul></section>
+          <section class="overview-section"><h2>You will change</h2><ul class="overview-list">${listMarkup(start.learner_changes)}</ul></section>
+        </div>
+        <section class="overview-section overview-section-wide">
+          <h2>You do not need to</h2>
+          <ul class="overview-list">${listMarkup(start.not_required)}</ul>
+        </section>
+        <section class="overview-section overview-section-wide">
+          <h2>Before you begin</h2>
+          <ul class="overview-list">${listMarkup(scenario.prerequisites)}</ul>
+        </section>`;
+
+      if (page === 2) return `
+        <div class="overview-kicker">Your journey</div>
+        <h1>What you’ll do</h1>
+        <p class="overview-lead">Each step has a focused goal. The detailed instructions appear in the lab after this orientation.</p>
+        <ol class="overview-journey">${(o.journey || []).map((step, index) => `
+          <li><span class="overview-journey-number">${index + 1}</span><div><strong>${escapeHTML(step.title)}</strong><p>${escapeHTML(step.description)}</p><small>Why: ${escapeHTML(step.purpose)}</small></div></li>`).join('')}</ol>`;
+
+      if (page === 3) return `
+        <div class="overview-kicker">Working in the lab</div>
+        <h1>How this lab works</h1>
+        <p class="overview-lead">The interface is split into instructions and tools so you can learn and practice side by side.</p>
+        <div class="overview-columns">
+          <section class="overview-section"><h2>Instructions</h2><ul class="overview-list">
+            <li>Read the instructions on the left.</li>
+            <li>Follow the requested changes in order.</li>
+            ${hasChecks ? '<li>Click <strong>Check</strong> after completing a step.</li><li>Checks must pass before you can continue.</li>' : '<li>This is an open-ended playground with no required checkpoints.</li>'}
+          </ul></section>
+          <section class="overview-section"><h2>Lab tools</h2><ul class="overview-list">${listMarkup(o.tools)}</ul></section>
+        </div>
+        <section class="overview-section overview-section-wide"><h2>Useful behaviors</h2><ul class="overview-list">
+          <li>Click shell commands in the instructions to send them to the lab terminal.</li>
+          <li>Use the IDE and browser when a step calls for them.</li>
+          <li>You can go back to review a previous step${hasChecks ? ' or retry a check' : ''}.</li>
+        </ul></section>`;
+
+      return `
+        <div class="overview-kicker">The finish line</div>
+        <h1>What success looks like</h1>
+        <p class="overview-lead">You are finished when the following results are observable, not just when the files have been edited.</p>
+        <section class="overview-section overview-section-wide"><h2>Success criteria</h2><ul class="overview-list overview-check-list">${listMarkup(success.criteria)}</ul></section>
+        <section class="overview-callout"><h2>Final state</h2><p>${escapeHTML(success.final_state || '')}</p></section>
+        ${o.important_notes?.length ? `<section class="overview-section overview-section-wide"><h2>Important notes</h2><ul class="overview-list">${listMarkup(o.important_notes)}</ul></section>` : ''}
+        <p class="overview-lifecycle">Your lab environment is temporary. The VM and any data inside it will be removed when you leave or when the lab expires.</p>`;
+    }
+
+    function renderOverviewPage() {
+      document.getElementById('overview-page').innerHTML = orientationPageMarkup(overviewPage);
+      document.getElementById('overview-page-counter').textContent = `${overviewPage + 1} of ${OVERVIEW_PAGES}`;
+      document.getElementById('overview-progress-fill').style.width = `${((overviewPage + 1) / OVERVIEW_PAGES) * 100}%`;
+      document.getElementById('overview-back').disabled = overviewPage === 0;
+      document.getElementById('overview-next').textContent = overviewPage === OVERVIEW_PAGES - 1
+        ? (sessionStatus === 'ready' ? 'Start the lab →' : sessionStatus === 'paused' ? 'Resume the lab →' : 'Continue to lab →') : 'Next →';
+    }
+
+    function renderOverview(sc) {
+      scenario = sc;
+      overviewPage = 0;
+      renderOverviewPage();
+      document.getElementById('overview-overlay').hidden = false;
+      document.getElementById('overview-btn').style.display = 'inline-flex';
+    }
+
+    function openOverview() {
+      if (!scenario) return;
+      overviewPage = 0;
+      renderOverviewPage();
+      document.getElementById('overview-overlay').hidden = false;
+    }
+
+    function closeOverview() {
+      document.getElementById('overview-overlay').hidden = true;
+    }
+
+    function previousOverviewPage() {
+      if (overviewPage > 0) { overviewPage--; renderOverviewPage(); }
+    }
+
+    function nextOverviewPage() {
+      if (overviewPage < OVERVIEW_PAGES - 1) { overviewPage++; renderOverviewPage(); }
+      else closeOverview();
+    }
+
+    function updateOverviewStatus(status) {
+      const statusChanged = sessionStatus !== status;
+      sessionStatus = status;
+      const text = document.getElementById('overview-status-text');
+      const statusBox = document.getElementById('overview-status');
+      if (!text || !statusBox) return;
+      if (status === 'ready') {
+        text.textContent = 'Your lab environment is ready. Start whenever you’re ready.';
+        statusBox.classList.add('ready');
+      } else if (status === 'paused') {
+        text.textContent = 'This lab is paused. Close this guide and use Resume to continue.';
+        statusBox.classList.remove('ready');
+      } else {
+        text.textContent = 'Your lab environment is provisioning in the background. Read through the guide while it gets ready.';
+        statusBox.classList.remove('ready');
+      }
+      if (scenario && statusChanged) renderOverviewPage();
+    }
+
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeOverview();
+    });
 
     // ── Tabs ────────────────────────────────────────────────────────────────
     function addTab() {
@@ -238,6 +424,8 @@
         }
 
         const resumeBtn = document.getElementById('resume-btn');
+
+        updateOverviewStatus(sess.status);
 
         if (sess.status === 'running') {
           // ttyd is useful before setup completes: Terminal 1 tails the live

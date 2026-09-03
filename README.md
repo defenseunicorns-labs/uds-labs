@@ -248,6 +248,32 @@ difficulty: beginner  # beginner | intermediate | advanced
 browser: false        # true = provision Chromium + noVNC
 tier: tools           # base | tools | uds-core — selects which golden PVC to clone
 size: medium
+orientation:
+  mission: "The capability this lab helps the learner demonstrate."
+  why: "Why this capability matters in real work."
+  starting_point:
+    provided:
+      - "What the lab supplies or has already configured"
+    learner_changes:
+      - "The files, configuration, or resources the learner will change"
+    not_required:
+      - "Things the learner does not need to build, install, or provide"
+  journey:
+    - title: "Step one"
+      description: "What the learner will do in this step."
+      purpose: "Why this step matters."
+    - title: "Step two"
+      description: "What the learner will do in this step."
+      purpose: "Why this step matters."
+  success:
+    criteria:
+      - "An observable result that demonstrates success."
+    final_state: "What is true when the learner finishes."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+  important_notes:
+    - "Temporary, destructive, or intentionally surprising behavior to know upfront."
 steps:
   - title: "Step one"
     text: steps/step1.md
@@ -255,6 +281,12 @@ steps:
   - title: "Step two"
     text: steps/step2.md
 ```
+
+`orientation` defines the repeatable first-time briefing shown before a lab. The UI always presents five pages: **mission**, **starting point**, **journey**, **how the lab works**, and **success and environment**. Authors provide scenario-specific content; detailed instructions remain in the step Markdown files.
+
+The following orientation fields are required: `mission`, `starting_point.provided`, at least one `starting_point.learner_changes` or `starting_point.not_required`, one `journey` entry for every step, `success.criteria`, `success.final_state`, and at least one `tools` entry. Each journey entry requires `title`, `description`, and `purpose`. Scenario loading rejects incomplete orientations so new scenarios cannot silently ship without a first-time briefing.
+
+Keep orientation content concise enough to scan across the five pages. Explain the starting point, learner responsibility, and observable finish line; do not duplicate the step instructions. `why`, `important_notes`, and `learner_changes` or `not_required` may be empty when they do not apply; `provided` must identify at least one starting-point item. Playgrounds use the same contract, with `learner_changes: []` and a single journey entry for their welcome step.
 
 The catalog order, sections, and external learning resources are defined centrally in `scenarios/catalog.yaml`. Add a `scenario: <directory-id>` item there to make a scenario visible in the learner catalog. Prerequisites are advisory and never block launch.
 

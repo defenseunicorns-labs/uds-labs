@@ -1,0 +1,109 @@
+title: "Package a Stateless Evidence App"
+description: "Package and deploy a pre-containerized Release Ledger application while learning the boundary between application code, Helm, Zarf, and UDS."
+outcome: "Deploy a stateless evidence app and explain why application data disappears when its pod is replaced."
+prerequisites:
+  - "A containerized application"
+  - "Basic Kubernetes and Helm familiarity"
+duration: 60
+difficulty: intermediate
+orientation:
+  mission: "Turn a pre-containerized Release Ledger application into a deployable UDS package."
+  why: "Learn how application code, Helm, UDS Package resources, Zarf, and bundles fit together in a real deployment workflow."
+  starting_point:
+    provided:
+      - "Release Ledger application source code"
+      - "A container image and working project workspace"
+      - "A UDS Core lab environment"
+    learner_changes:
+      - "Helm Deployment and Service templates"
+      - "UDS Package configuration"
+      - "Zarf package, bundle, and task definitions"
+    not_required:
+      - "Writing application code"
+      - "Creating a Kubernetes cluster"
+      - "Cloud credentials or external services"
+  journey:
+    - title: "Meet the application"
+      description: "Inspect the API, container, port, and workspace provided for you."
+      purpose: "Understand what you are packaging before changing deployment files."
+    - title: "Write the Helm chart"
+      description: "Define the Kubernetes Deployment and Service for Release Ledger."
+      purpose: "Make the application runnable on Kubernetes."
+    - title: "Add the UDS Package"
+      description: "Declare how UDS should expose the application through the platform."
+      purpose: "Connect the workload to UDS networking and service discovery."
+    - title: "Create zarf.yaml"
+      description: "Describe the application package and its Helm deployment."
+      purpose: "Create a portable package that can be deployed by Zarf."
+    - title: "Compose the bundle"
+      description: "Add the package to a UDS bundle and create a repeatable task."
+      purpose: "Separate application packaging from environment-level deployment."
+    - title: "Deploy and observe"
+      description: "Deploy the bundle, use the application, and observe pod replacement."
+      purpose: "Connect the package configuration to an observable runtime result."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The application deploys successfully and is reachable in the browser."
+      - "You can explain why data stored in the container filesystem is ephemeral."
+    final_state: "Release Ledger is running as a packaged UDS application, with its intentional stateless behavior demonstrated."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when you leave or when the lab expires."
+    - "The data-loss behavior at the end is intentional; it demonstrates that container-local storage is not durable."
+browser: true
+image: uds-core
+size: medium
+tags:
+  - uds
+  - zarf
+  - helm
+  - python
+  - evidence
+preview:
+  fixture: preview/fixture
+  workspace: /root/release-ledger
+  checks:
+    - step: 1
+      path: app.py
+      contains: ["/api/releases", "/api/releases/<release_id>/evidence", "PORT", "8080"]
+    - step: 2
+      path: chart/templates/deployment.yaml
+      contains: ["kind: Deployment", "app: release-ledger", "containerPort: 8080"]
+    - step: 2
+      path: chart/templates/service.yaml
+      contains: ["kind: Service", "targetPort: 8080"]
+    - step: 3
+      path: chart/templates/uds-package.yaml
+      contains: ["kind: Package", "network:", "expose:", "remoteGenerated"]
+    - step: 4
+      path: zarf.yaml
+      contains: ["ZarfPackageConfig", "release-ledger:dev"]
+    - step: 5
+      path: bundle/uds-bundle.yaml
+      contains: ["UDSBundle", "name: release-ledger"]
+    - step: 5
+      path: tasks.yaml
+      contains: ["uds-common", "name: dev"]
+steps:
+  - title: "The app: Release Ledger on port 8080"
+    text: steps/1-meet-the-app.md
+    verify: step1.sh
+  - title: "Write the Helm chart"
+    text: steps/2-helm-chart.md
+    verify: step2.sh
+  - title: "The UDS Package CR: expose the app"
+    text: steps/3-uds-package-cr.md
+    verify: step3.sh
+  - title: "Write zarf.yaml"
+    text: steps/4-zarf-yaml.md
+    verify: step4.sh
+  - title: "Bundle and tasks"
+    text: steps/5-bundle-tasks.md
+    verify: step5.sh
+  - title: "Deploy and observe ephemeral data"
+    text: steps/6-deploy.md
+    verify: step6.sh
