@@ -80,8 +80,9 @@ type taskDefinition struct {
 }
 
 type taskAction struct {
-	Task string `yaml:"task"`
-	Cmd  string `yaml:"cmd"`
+	Task  string            `yaml:"task"`
+	Cmd   string            `yaml:"cmd"`
+	Shell map[string]string `yaml:"shell"`
 }
 
 func mustReadFile(t *testing.T, path string) []byte {
@@ -714,6 +715,32 @@ func TestReleasePromotesOneValidatedArchive(t *testing.T) {
 	if !strings.Contains(contents, "zarf_package: ${{ .variables.PACKAGE_ARCHIVE }}") {
 		t.Fatal("release must publish the explicitly recorded Zarf archive")
 	}
+
+	var config taskConfig
+	readYAML(t, "tasks.yaml", &config)
+	foundReleaseAction := false
+	for _, task := range config.Tasks {
+		if task.Name != "release" {
+			continue
+		}
+		for _, action := range task.Actions {
+			if strings.Contains(action.Cmd, "uds-pk release show upstream") {
+				if action.Shell["linux"] != "bash" || action.Shell["darwin"] != "bash" {
+					t.Fatal("release archive recording must explicitly use Bash for pipefail")
+				}
+				if !strings.Contains(action.Cmd, "${VERSION}.tar.zst") {
+					t.Fatal("release archive recording must use the Package Kit release filename")
+				}
+				foundReleaseAction = true
+				break
+			}
+		}
+		break
+	}
+	if !foundReleaseAction {
+		t.Fatal("release archive recording action is missing")
+	}
+
 	if _, err := os.Stat(".github/workflows/release.yaml"); err != nil {
 		t.Fatalf("primary release workflow is missing: %v", err)
 	}
