@@ -465,6 +465,9 @@ tasks:
         default: "3"
     actions:
       - description: Create k3d cluster with slim UDS Core
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           PACKAGE="oci://ghcr.io/defenseunicorns/dev/uds/checkpoints/k3d-core-slim-dev:${{ .inputs.version }}"
