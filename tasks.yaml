@@ -724,9 +724,13 @@ tasks:
           witness_workingdir: .
 
       - description: Record the exact Zarf archive produced for this release
+        shell:
+          linux: bash
+          darwin: bash
         cmd: |
           set -euo pipefail
           VERSION="$(uds-pk release show upstream)"
+          # `release show` includes the flavor suffix (for example, -upstream).
           ARCHIVE="./zarf-package-uds-labs-${{ .inputs.architecture }}-${VERSION}.tar.zst"
           [ -f "$ARCHIVE" ] || { echo "ERROR: expected release archive $ARCHIVE" >&2; exit 1; }
           printf '%s\n' "$ARCHIVE"
