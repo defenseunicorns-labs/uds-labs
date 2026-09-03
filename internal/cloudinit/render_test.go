@@ -28,6 +28,27 @@ func TestRenderStreamsSetupOutputUntilScenarioIsReady(t *testing.T) {
 	}
 }
 
+func TestRenderEmbedsScenarioApplicationFiles(t *testing.T) {
+	tmpl := template.Must(template.ParseFiles("../../vm/user-data.sh.gotmpl"))
+	scenarios := fstest.MapFS{
+		"example/setup.sh":   &fstest.MapFile{Data: []byte("#!/bin/bash\n")},
+		"example/app/app.py": &fstest.MapFile{Data: []byte("print('release ledger')\n")},
+	}
+
+	got, err := Render(tmpl, scenarios, "example", "# inject", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`cat > "$SCENARIO_DIR/app/app.py"`,
+		"print('release ledger')",
+	} {
+		if !strings.Contains(got, required) {
+			t.Errorf("rendered user-data is missing %q", required)
+		}
+	}
+}
+
 func TestRenderUsesEnvironmentProvidedDNSResolvers(t *testing.T) {
 	tmpl := template.Must(template.ParseFiles("../../vm/user-data.sh.gotmpl"))
 	scenarios := fstest.MapFS{

@@ -6,4 +6,4 @@
 # Helm chart, and bundle in the release checkout. VM images are versioned separately.
 flavors:
   - name: upstream
-    version: v0.6.0-uds.2
+    version: v0.6.1-uds.0

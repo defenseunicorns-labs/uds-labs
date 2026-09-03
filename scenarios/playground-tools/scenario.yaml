@@ -5,6 +5,34 @@ prerequisites:
   - "None"
 duration: 60
 difficulty: beginner
+orientation:
+  mission: "Explore a ready-to-use cloud-native toolbox in an isolated lab environment."
+  why: "Practice commands and inspect tools without needing to install or configure them on your own machine."
+  starting_point:
+    provided:
+      - "A temporary VM with Docker, k3d, uds, neovim, jq, yq, and yamllint"
+      - "A shell workspace for experiments"
+    learner_changes: []
+    not_required:
+      - "A pre-existing cluster"
+      - "Cloud credentials"
+      - "A required deployment goal"
+  journey:
+    - title: "Welcome"
+      description: "Review the available tools and suggested ways to explore the environment."
+      purpose: "Choose your own experiment and become familiar with the lab workspace."
+  success:
+    criteria:
+      - "You can open a terminal and use the pre-installed tools."
+      - "You can experiment without affecting an external environment."
+    final_state: "You have an isolated toolbox ready for open-ended UDS and cloud-native experiments."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "This is an open playground, not a guided exercise; there are no required checkpoints."
+    - "The VM is temporary and will be removed when you leave or when the lab expires."
 playground: true
 browser: true
 size: medium

@@ -63,6 +63,14 @@ echo "nameserver 127.0.0.1" > /etc/resolv.conf
 SCENARIO_DIR="/opt/scenario"
 mkdir -p "$SCENARIO_DIR"
 
+log "Writing scenario application files..."
+{{range $name, $content := .AppFiles}}
+mkdir -p "$SCENARIO_DIR/app/$(dirname "{{$name}}")"
+cat > "$SCENARIO_DIR/app/{{$name}}" << 'APP_EOF'
+{{$content}}
+APP_EOF
+{{end}}
+
 log "Writing scenario setup script..."
 cat > "$SCENARIO_DIR/setup.sh" << 'SETUP_EOF'
 {{.SetupSh}}

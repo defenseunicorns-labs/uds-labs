@@ -6,6 +6,50 @@ prerequisites:
   - "Basic container image familiarity"
 duration: 45
 difficulty: beginner
+orientation:
+  mission: "Explore a maintained UDS Reference Package and understand how its pieces fit together."
+  why: "Build a practical mental model for the boundary between an application package, its deployment bundle, and UDS Core integrations."
+  starting_point:
+    provided:
+      - "A maintained reference package repository"
+      - "A UDS Core lab environment"
+      - "A complete application package and deployment bundle"
+    learner_changes:
+      - "Selected package and bundle files as directed"
+      - "Commands and configuration used to inspect and deploy the package"
+    not_required:
+      - "Writing an application"
+      - "Designing a package from scratch"
+      - "Cloud credentials or external services"
+  journey:
+    - title: "Explore zarf.yaml"
+      description: "Inspect the application package and its component definitions."
+      purpose: "See what belongs inside the application package."
+    - title: "Understand the bundle layer"
+      description: "Trace dependencies and environment composition in the bundle."
+      purpose: "Learn why infrastructure dependencies belong at the bundle layer."
+    - title: "Read the UDS Package CR"
+      description: "Inspect networking, SSO, and monitoring declarations."
+      purpose: "Understand how the package requests platform integrations."
+    - title: "Deploy with uds run dev"
+      description: "Use the repository's development workflow to deploy the package."
+      purpose: "Connect the source structure to a repeatable deployment command."
+    - title: "Verify integrations"
+      description: "Inspect the deployed application and generated platform resources."
+      purpose: "Confirm the declared integrations are reflected in the cluster."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "You can identify which files belong to the package and which belong to the bundle."
+      - "You can explain how the UDS Package CR requests platform integrations."
+    final_state: "The reference package is deployed and its package, bundle, networking, SSO, and monitoring boundaries are understood."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when you leave or when the lab expires."
+    - "The reference package demonstrates useful patterns, but not every implementation detail should be treated as universally canonical."
 browser: true
 image: uds-core
 size: medium

@@ -8,8 +8,11 @@ package cloudinit
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
+	"path"
+	"strings"
 	"text/template" // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template -- renders cloud-init YAML/shell, not HTML
 )
 
@@ -17,6 +20,7 @@ import (
 type Input struct {
 	SetupSh        string
 	VerifyScripts  map[string]string
+	AppFiles       map[string]string
 	BrowserEnabled bool
 	InjectPy       string
 }
@@ -43,14 +47,54 @@ func Render(tmpl *template.Template, scenariosFS fs.FS, scenarioID, injectPy str
 		}
 	}
 
+	appFiles, err := readAppFiles(scenariosFS, scenarioID)
+	if err != nil {
+		return "", fmt.Errorf("scenario %q app files: %w", scenarioID, err)
+	}
+
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, Input{
 		SetupSh:        string(setupSh),
 		VerifyScripts:  verify,
+		AppFiles:       appFiles,
 		BrowserEnabled: browserEnabled,
 		InjectPy:       injectPy,
 	}); err != nil {
 		return "", fmt.Errorf("render user-data for %q: %w", scenarioID, err)
 	}
 	return buf.String(), nil
+}
+
+func readAppFiles(scenariosFS fs.FS, scenarioID string) (map[string]string, error) {
+	root := path.Join(scenarioID, "app")
+	if _, err := fs.Stat(scenariosFS, root); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	files := map[string]string{}
+	err := fs.WalkDir(scenariosFS, root, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("app file %q is not regular", filePath)
+		}
+		relative := strings.TrimPrefix(filePath, root+"/")
+		if relative == filePath || relative == "" || path.IsAbs(relative) || strings.HasPrefix(path.Clean(relative), "../") {
+			return fmt.Errorf("invalid app file path %q", relative)
+		}
+		contents, err := fs.ReadFile(scenariosFS, filePath)
+		if err != nil {
+			return err
+		}
+		files[relative] = string(contents)
+		return nil
+	})
+	return files, err
 }

@@ -33,6 +33,23 @@ prerequisites:
   - Basic Helm
 duration: 45
 difficulty: intermediate
+orientation:
+  mission: Package the app.
+  starting_point:
+    provided:
+      - Application source
+    learner_changes:
+      - Package files
+  journey:
+    - title: Start
+      description: Inspect the app.
+      purpose: Understand the starting point.
+  success:
+    criteria:
+      - The package deploys.
+    final_state: A working package.
+  tools:
+    - Terminal
 steps:
   - title: Start
     text: steps/start.md

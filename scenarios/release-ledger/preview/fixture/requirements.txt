@@ -1,0 +1,5 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+flask==3.0.3
+minio==7.2.7
+psycopg[binary]==3.2.9

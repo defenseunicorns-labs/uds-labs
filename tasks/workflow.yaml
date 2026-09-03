@@ -172,20 +172,26 @@ tasks:
             fi
             sleep 10
           done
-      - description: Check uds-labs pod is Running
+      - description: Check uds-labs deployment is ready
         maxTotalSeconds: 30
         cmd: |
           NS="uds-labs"
-          NOT_RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
-            --field-selector=status.phase!=Running \
-            -o name 2>/dev/null | head -5)
-          RUNNING=$(kubectl get pods -n "$NS" -l app=uds-labs \
-            --field-selector=status.phase=Running \
-            -o name 2>/dev/null | head -1)
-          if [ -n "$RUNNING" ] && [ -z "$NOT_RUNNING" ]; then
-            echo "  ✔ uds-labs pod Running"
+          STATUS=$(kubectl get deployment uds-labs -n "$NS" \
+            -o jsonpath='{.spec.replicas}{" "}{.status.readyReplicas}{" "}{.status.updatedReplicas}{" "}{.status.availableReplicas}' \
+            2>/dev/null || true)
+          read -r DESIRED READY UPDATED AVAILABLE <<< "$STATUS"
+          DESIRED=${DESIRED:-0}
+          READY=${READY:-0}
+          UPDATED=${UPDATED:-0}
+          AVAILABLE=${AVAILABLE:-0}
+          if [ "$DESIRED" -gt 0 ] && \
+             [ "$READY" -eq "$DESIRED" ] && \
+             [ "$UPDATED" -eq "$DESIRED" ] && \
+             [ "$AVAILABLE" -eq "$DESIRED" ]; then
+            echo "  ✔ uds-labs deployment ready ($READY/$DESIRED replicas)"
           else
-            echo "  ✘ uds-labs pod not Running"
+            echo "  ✘ uds-labs deployment not ready (ready=$READY updated=$UPDATED available=$AVAILABLE desired=$DESIRED)"
+            kubectl get deployment uds-labs -n "$NS" 2>/dev/null || true
             kubectl get pods -n "$NS" -l app=uds-labs 2>/dev/null || true
             exit 1
           fi

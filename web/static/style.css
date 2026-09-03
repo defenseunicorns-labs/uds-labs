@@ -152,6 +152,18 @@ nav .logo {
   .scenario-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 600px) {
+  .overview-overlay { padding: 12px; }
+  .overview-card { padding: 22px 18px; }
+  .overview-heading { display: block; }
+  .overview-badges { margin-top: 10px; }
+  .overview-columns { display: block; }
+  .overview-columns .overview-section + .overview-section { margin-top: 20px; }
+  .overview-footer { align-items: stretch; flex-direction: column; }
+  .overview-navigation { justify-content: space-between; }
+  .overview-footer .btn { justify-content: center; }
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -177,6 +189,220 @@ nav .logo {
 .btn-check-fail { background: rgba(248,81,73,0.15); color: var(--danger); border: 1px solid var(--danger); font-weight: 600; }
 
 /* ── Lab page layout ──────────────────────────────────────────────────────── */
+.overview-nav-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.overview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(13, 17, 23, 0.84);
+}
+
+.overview-card {
+  position: relative;
+  width: min(720px, 100%);
+  padding: 30px 32px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.overview-close {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.overview-close:hover { color: var(--text); }
+.overview-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 28px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.overview-progress .overview-kicker { margin: 0; }
+.overview-progress-bar {
+  height: 3px;
+  margin: 12px 0 28px;
+  border-radius: 999px;
+  background: #21262d;
+  overflow: hidden;
+}
+.overview-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.overview-kicker {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.overview-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding-right: 28px;
+}
+.overview-heading h1,
+.overview-page > h1 {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.overview-badges {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  margin-top: 4px;
+}
+.overview-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.overview-description,
+.overview-lead {
+  max-width: 620px;
+  margin: 10px 0 24px;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.overview-section { min-width: 0; }
+.overview-section h2,
+.overview-callout h2 {
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.overview-section p,
+.overview-list,
+.overview-journey {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.overview-section-wide { margin-top: 22px; }
+.overview-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.overview-list { padding-left: 20px; }
+.overview-list li { margin-bottom: 5px; }
+.overview-callout {
+  margin: 20px 0 24px;
+  padding: 15px 17px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: var(--radius);
+  background: rgba(88, 166, 255, 0.08);
+}
+.overview-callout p { color: var(--text); font-size: 15px; line-height: 1.5; }
+.overview-journey {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.overview-journey li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #131920;
+}
+.overview-journey-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(88, 166, 255, 0.14);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.overview-journey strong { color: var(--text); font-size: 13px; }
+.overview-journey p { margin: 2px 0; }
+.overview-journey small { color: var(--text-muted); font-size: 12px; }
+.overview-check-list { list-style: none; padding-left: 0; }
+.overview-check-list li::before { content: '✓'; display: inline-block; width: 20px; color: var(--success); font-weight: 600; }
+.overview-lifecycle { margin-top: 22px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.overview-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 24px;
+  padding: 11px 13px;
+  border: 1px solid rgba(210, 153, 34, 0.35);
+  border-radius: var(--radius);
+  background: rgba(210, 153, 34, 0.08);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.overview-status.ready {
+  border-color: rgba(63, 185, 80, 0.35);
+  background: rgba(63, 185, 80, 0.08);
+}
+.overview-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(210, 153, 34, 0.12);
+}
+.overview-status.ready .overview-status-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.12);
+}
+.overview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.overview-navigation { display: flex; gap: 8px; }
+.overview-skip { border-color: transparent; padding-left: 0; }
+.overview-skip:hover { border-color: transparent; }
+
 .lab-layout {
   display: grid;
   grid-template-columns: 420px 1fr;
