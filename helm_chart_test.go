@@ -141,7 +141,7 @@ func TestHelmChart_KubeVirtProviderExemptsCDIClonePodsFromIstioOverridePolicy(t 
 		"kind: Exemption",
 		"namespace: uds-policy-exemptions",
 		"RestrictIstioTrafficOverrides",
-		"name: ^(cdi-(upload|clone-source)-.*|[0-9a-f-]{36}-source-pod)$",
+		"name: ^(cdi-(upload|clone-source)-.*|importer-.*|[0-9a-f-]{36}-source-pod)$",
 		"namespace: uds-labs-vms",
 	} {
 		if !strings.Contains(out, expected) {

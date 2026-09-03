@@ -30,6 +30,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config.yaml
     actions:
       - task: images:build-images
         with:
@@ -47,6 +50,8 @@ tasks:
           local: ${{ .inputs.LOCAL_VM_IMAGES }}
       - task: images:build-bundle
       - task: images:deploy-bundle
+        with:
+          config: ${{ .inputs.BUNDLE_CONFIG }}
       # Helm does not roll Deployments when a same-tag image is rebuilt. Force
       # both binaries to restart so redeploy actually tests the current source.
       - description: Restart the lab server and operator after same-tag rebuild
@@ -78,6 +83,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: cluster:bootstrap-local-cluster
         with:
@@ -89,6 +97,7 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
 
 
   - name: redeploy
@@ -97,12 +106,16 @@ tasks:
       vm_image_tag:
         description: VM image tag (defaults to package version)
         default: ""
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: deploy-stack
         with:
           BUILD_IMAGES: "0"
           LOCAL_VM_IMAGES: "0"
           VM_IMAGE_TAG: ${{ .inputs.vm_image_tag }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
       - task: smoke-test
 
   # ── Smoke test ───────────────────────────────────────────────────────────────
@@ -229,6 +242,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: quality:clean-artifacts
         with:
@@ -248,6 +264,7 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
       - task: access:patch-coredns
       - task: access:start-proxy
       - task: access:create-test-user

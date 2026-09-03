@@ -16,7 +16,16 @@ components:
     actions:
       onRemove:
         before:
-          - cmd: "if ./zarf tools kubectl get crd labsessions.labs.uds.dev >/dev/null 2>&1; then\n  ./zarf tools kubectl get labsessions.labs.uds.dev --all-namespaces \\\n    -o jsonpath='{range .items[*]}{.metadata.namespace}{\" \"}{.metadata.name}{\"\\\\n\"}{end}' \\\n    | while read -r namespace name; do\n        [ -n \"$name\" ] || continue\n        ./zarf tools kubectl -n \"$namespace\" patch labsession \"$name\" \\\n          --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'\n      done\nfi\n"
+          - cmd: |
+              if ./zarf tools kubectl get crd labsessions.labs.uds.dev >/dev/null 2>&1; then
+                ./zarf tools kubectl get labsessions.labs.uds.dev --all-namespaces \
+                  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+                  | while read -r namespace name; do
+                      [ -n "$name" ] || continue
+                      ./zarf tools kubectl -n "$namespace" patch labsession "$name" \
+                        --type=merge -p '{"metadata":{"finalizers":[]}}'
+                    done
+              fi
             description: Remove orphaned LabSession teardown finalizers
   - name: uds-labs
     description: Lab server and operator Deployments, RBAC, and supporting resources

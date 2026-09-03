@@ -442,6 +442,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config.yaml
     actions:
       - task: workflow:deploy-stack
         with:
@@ -450,6 +453,7 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
 
   - name: cluster-up
     description: "Backward-compatible alias: bootstrap local k3s, then deploy the UDS bundle."
@@ -472,6 +476,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build and embed local VM image-server containers instead of pulling published images
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: workflow:cluster-up
         with:
@@ -481,6 +488,7 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
 
   - name: redeploy
     description: Rebuild and redeploy through the canonical UDS bundle
@@ -488,10 +496,14 @@ tasks:
       vm_image_tag:
         description: VM image tag (defaults to package version)
         default: ""
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: workflow:redeploy
         with:
           vm_image_tag: ${{ .inputs.vm_image_tag }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
 
   - name: smoke-test
     description: Verify golden PVCs, platform, and authservice
@@ -778,6 +790,9 @@ tasks:
       LOCAL_VM_IMAGES:
         description: Build the VM-image package from local qcow2 files (1) or reuse/pull it (0)
         default: "0"
+      BUNDLE_CONFIG:
+        description: Path to the deploy-time bundle configuration
+        default: bundle/uds-config-local.yaml
     actions:
       - task: workflow:local-e2e
         with:
@@ -789,3 +804,4 @@ tasks:
           SKIP_UDS_CORE: ${{ .inputs.SKIP_UDS_CORE }}
           VM_IMAGE_TAG: ${{ .inputs.VM_IMAGE_TAG }}
           LOCAL_VM_IMAGES: ${{ .inputs.LOCAL_VM_IMAGES }}
+          BUNDLE_CONFIG: ${{ .inputs.BUNDLE_CONFIG }}
