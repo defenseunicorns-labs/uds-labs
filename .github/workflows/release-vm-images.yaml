@@ -1,0 +1,96 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+name: Release VM Images
+
+# VM images have an independent release cadence from the application package.
+# Run this workflow manually after changing the VM image package or Packer
+# inputs; normal application releases reuse the last published VM package.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    # Packer needs KVM and substantially more disk than a standard hosted runner.
+    # This is the runner pool used by the UDS package release workflows.
+    runs-on: appstore-8-core-amd64
+    timeout-minutes: 360
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install UDS CLI
+        uses: defenseunicorns-udm/udm-common/.github/actions/uds-cli-setup@9aaad66b21c7637b5be3d6aafdb21c9e7ff1df2a # v0.10.3
+
+      - name: Set up Packer
+        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
+        with:
+          version: 1.16.0
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils
+
+      - name: Verify VM build dependencies
+        run: |
+          set -euo pipefail
+          command -v packer
+          command -v qemu-img
+          command -v qemu-system-x86_64
+          test -e /dev/kvm || {
+            echo "ERROR: /dev/kvm is required for the Packer VM image build" >&2
+            exit 1
+          }
+
+      - name: Read VM package metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          version="$(uds zarf tools yq -r '.metadata.version' packages/vm-images/zarf.yaml)"
+          chart_version="$(uds zarf tools yq -r '.version' packages/vm-images/chart/Chart.yaml)"
+          bundle_version="$(uds zarf tools yq -r '.packages[] | select(.name == "uds-labs-vm-images").ref' bundle/uds-bundle.yaml)"
+          image_tag="$(uds zarf tools yq -r '.imageTag' packages/vm-images/chart/values.yaml)"
+          test -n "$version" && test "$version" != "dev" && test "$version" != "null"
+          test "$chart_version" = "$version" || { echo "VM chart version does not match package version" >&2; exit 1; }
+          test "$bundle_version" = "$version" || { echo "Bundle VM package reference does not match package version" >&2; exit 1; }
+          test -n "$image_tag" && test "$image_tag" != "latest" && test "$image_tag" != "null"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          echo "Publishing VM image package $version with image tag $image_tag"
+
+      - name: Build Packer VM images
+        run: uds run build-images --no-progress
+
+      - name: Build VM image-server containers
+        run: uds run build-vm-images --no-progress
+
+      - name: Build VM image Zarf package
+        run: uds run build-vm-images-package --no-progress
+
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push VM image-server containers
+        run: uds run push-vm-images --no-progress --with tag="${{ steps.metadata.outputs.image_tag }}"
+
+      - name: Publish VM image Zarf package
+        env:
+          VM_PACKAGE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          package="$(find packages/vm-images -maxdepth 1 -type f -name "zarf-package-uds-labs-vm-images-*-${VM_PACKAGE_VERSION}.tar.zst" -print -quit)"
+          test -n "$package" || {
+            echo "ERROR: no VM image package was built for ${VM_PACKAGE_VERSION}" >&2
+            exit 1
+          }
+          uds zarf package publish --confirm --tag "$VM_PACKAGE_VERSION" "$package" \
+            "oci://ghcr.io/defenseunicorns-labs/uds-labs-vm-images"
