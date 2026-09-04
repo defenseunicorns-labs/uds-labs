@@ -60,7 +60,7 @@ package, `uds-labs` container image, Helm chart, and bundle. VM-image packages
 retain an independent version because their Packer build and publication cadence differ.
 
 1. Update the `upstream` version in [`releaser.yaml`](./releaser.yaml) through a pull request.
-2. Merging to `master` runs the [`release.yaml`](./.github/workflows/release.yaml) workflow.
+2. Run the [`release.yaml`](./.github/workflows/release.yaml) workflow manually from GitHub Actions.
 3. Package Kit verifies and renders the release coordinate; `uds run release-tasks:prepare` then synchronizes the Labs package, image, chart, and bundle.
 4. The workflow attests linting and security scans, builds the matching container image and one signed Zarf package, and validates that archive on k3d.
 5. It publishes the validated archive to GHCR and creates the GitHub release/tag, vouches its attestations to CAT, then publishes the exact same archive to UDS Proving Ground.
@@ -68,7 +68,19 @@ retain an independent version because their Packer build and publication cadence
 The package is first published at `ghcr.io/defenseunicorns-labs/uds/uds-labs`
 with an `-upstream` tag, then promoted to `registry.uds-mil.us/defenseunicorns`.
 VM-image package publication remains a separate infrastructure artifact because
-it requires the Packer/KVM build environment.
+it requires the Packer/KVM build environment. It is published by the manual
+[`Release VM Images`](./.github/workflows/release-vm-images.yaml) workflow, which
+builds the Packer images, pushes the image-server containers, and publishes the
+versioned Zarf package to `ghcr.io/defenseunicorns-labs/uds-labs-vm-images`.
+
+The VM package uses the version in `packages/vm-images/zarf.yaml` as its release
+coordinate; no second `releaser.yaml` is needed. `release-tasks:prepare` applies
+only to the main UDS Labs package and does not update the VM package reference.
+Bump the VM package version, the matching versions in its chart and bundle
+reference, and (when image contents change) the `imageTag` and image archive
+tags. The VM workflow verifies these references before building, then publishes
+the package. Application releases continue to reuse the last published VM
+package.
 
 ## Quick Start
 
