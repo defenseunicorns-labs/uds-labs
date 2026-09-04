@@ -6,7 +6,11 @@ name: Release VM Images
 # VM images have an independent release cadence from the application package.
 # Run this workflow manually after changing the VM image package or Packer
 # inputs; normal application releases reuse the last published VM package.
+# TODO: remove the branch-scoped push trigger before merging this change.
 on:
+  push:
+    branches:
+      - fix/release-manual-trigger
   workflow_dispatch:
 
 permissions:
