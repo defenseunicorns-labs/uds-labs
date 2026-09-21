@@ -64,13 +64,15 @@ packages:
                 - uds-labs-vms
   - name: uds-labs-vm-images
     path: ../packages/vm-images
-    ref: 0.4.3
+    ref: 0.4.4
     overrides:
       golden-pvcs:
         golden-pvcs:
-          values:
+          variables:
             - path: goldenPVCs.storageClass
-              value: ""
+              name: STORAGE_CLASS
+              description: StorageClass for golden and session PVCs; must support CSI volume cloning
+              default: ""
       vm-image-server:
         vm-image-server:
           values:
@@ -101,13 +103,15 @@ packages:
                 affinity: {}
                 nodeSelector: {}
                 tolerations: []
-            - path: storageClass
-              value: ""
             - path: maxActiveSessions
               value: 4
             - path: auth.allowedGroups
               value: []
           variables:
+            - path: storageClass
+              name: STORAGE_CLASS
+              description: StorageClass for session PVCs; must support CSI volume cloning
+              default: ""
             - path: serverPlacement
               name: LAB_SERVER_NODE_PLACEMENT
               default:

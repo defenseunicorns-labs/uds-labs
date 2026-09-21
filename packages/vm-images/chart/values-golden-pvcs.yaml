@@ -2,3 +2,4 @@ imageServers:
   enabled: false
 goldenPVCs:
   enabled: true
+  storageClass: "###ZARF_VAR_STORAGE_CLASS###"
