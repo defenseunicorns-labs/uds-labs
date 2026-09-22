@@ -454,6 +454,55 @@ tasks:
         with:
           run: ${{ .inputs.WIPE_CLUSTER }}
 
+  - name: k3d-test-cluster-with-retry
+    description: Create the checkpoint-based k3d test cluster with GHCR pull retries
+    inputs:
+      version:
+        description: Version of the k3d-core-slim-dev checkpoint package
+        default: 1.11.0
+      attempts:
+        description: Maximum number of checkpoint pull attempts
+        default: "3"
+    actions:
+      - description: Create k3d cluster with slim UDS Core
+        shell:
+          linux: bash
+          darwin: bash
+        cmd: |
+          set -euo pipefail
+          PACKAGE="oci://ghcr.io/defenseunicorns/dev/uds/checkpoints/k3d-core-slim-dev:${{ .inputs.version }}"
+          ATTEMPT=1
+          LOG=$(mktemp)
+          trap 'rm -f "$LOG"' EXIT
+
+          while [ "$ATTEMPT" -le "${{ .inputs.attempts }}" ]; do
+            : > "$LOG"
+            echo "Deploying ${PACKAGE} (attempt ${ATTEMPT}/${{ .inputs.attempts }})..."
+            if ./zarf package deploy "$PACKAGE" --confirm --features values=true 2>&1 | tee "$LOG"; then
+              break
+            fi
+
+            if ! grep -Eiq 'PROTOCOL_ERROR|stream error|connection reset|unexpected EOF|broken pipe|timeout' "$LOG"; then
+              echo "Checkpoint deployment failed with a non-transient error; not retrying." >&2
+              exit 1
+            fi
+            if [ "$ATTEMPT" -eq "${{ .inputs.attempts }}" ]; then
+              echo "Checkpoint deployment failed after ${ATTEMPT} attempts." >&2
+              exit 1
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Transient checkpoint pull failure; retrying in 15 seconds..." >&2
+            sleep 15
+          done
+      - description: Validate Keycloak endpoint
+        maxTotalSeconds: 300
+        wait:
+          network:
+            protocol: https
+            address: sso.uds.dev
+            code: 200
+
   - name: verify-cluster
     description: Print cluster node and workload status summary
     actions:

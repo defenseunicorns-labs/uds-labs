@@ -547,7 +547,7 @@ tasks:
   - name: validate-package-artifact
     description: Deploy the freshly built package on k3d and run package-only checks
     actions:
-      - task: uds-setup:k3d-test-cluster
+      - task: cluster:k3d-test-cluster-with-retry
       - task: deploy:package
         with:
           options: "--set OPERATOR_ENABLED=false"
