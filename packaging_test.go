@@ -15,6 +15,9 @@ import (
 )
 
 type zarfPackage struct {
+	Variables []struct {
+		Name string `yaml:"name"`
+	} `yaml:"variables"`
 	Components []zarfComponent `yaml:"components"`
 }
 
@@ -30,6 +33,9 @@ type zarfComponent struct {
 	} `yaml:"charts"`
 	Actions struct {
 		OnDeploy struct {
+			Before []struct {
+				Cmd string `yaml:"cmd"`
+			} `yaml:"before"`
 			After []struct {
 				Cmd  string `yaml:"cmd"`
 				Wait struct {
@@ -217,6 +223,19 @@ func TestVMImageComponentsInDedicatedPackage(t *testing.T) {
 	}
 	if server == nil || imports == nil {
 		t.Fatal("packages/vm-images/zarf.yaml must contain both vm-image-server and golden-pvcs components")
+	}
+	storageClassVariable := false
+	for _, variable := range pkg.Variables {
+		if variable.Name == "STORAGE_CLASS" {
+			storageClassVariable = true
+			break
+		}
+	}
+	if !storageClassVariable {
+		t.Fatal("VM image package must declare STORAGE_CLASS for CDI cloning")
+	}
+	if len(imports.Actions.OnDeploy.Before) != 1 || !strings.Contains(imports.Actions.OnDeploy.Before[0].Cmd, "cdi.kubevirt.io/clone-strategy=csi-clone") {
+		t.Fatal("golden-pvcs must configure CDI CSI cloning before creating golden DataVolumes")
 	}
 	for i := range pkg.Components {
 		if pkg.Components[i].Name == "golden-pvcs" && i <= serverIdx {

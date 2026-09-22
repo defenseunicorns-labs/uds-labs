@@ -7,6 +7,13 @@ shared:
   domain: uds.dev
 
 variables:
+  # Use a StorageClass whose CSI driver supports volume cloning. Leave these
+  # empty for clusters where CDI should retain its existing clone strategy.
+  uds-labs-vm-images:
+    STORAGE_CLASS: ""
+  uds-labs:
+    STORAGE_CLASS: ""
+
   kubevirt:
     VM_NAMESPACES:
       - uds-labs-vms
