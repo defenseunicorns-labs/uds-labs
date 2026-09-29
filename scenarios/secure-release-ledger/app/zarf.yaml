@@ -1,0 +1,26 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: zarf.dev/v1alpha1
+kind: ZarfPackageConfig
+metadata:
+  name: secure-release-ledger
+  description: Authservice-protected Release Ledger scenario application
+  version: dev
+variables:
+  - name: DOMAIN
+    description: Base domain for the protected route
+    default: uds.dev
+components:
+  - name: secure-release-ledger
+    required: true
+    charts:
+      - name: secure-release-ledger
+        localPath: chart/
+        namespace: secure-release-ledger
+        version: 0.1.0
+        variables:
+          - name: DOMAIN
+            description: Base domain for the protected route
+            path: domain
+    images:
+      - release-ledger:dev

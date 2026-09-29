@@ -92,8 +92,8 @@ The three dev commands map to three phases:
 ## Verify
 
 ```bash
-grep -q "UDSBundle" /root/myapp/bundle/uds-bundle.yaml && \
-grep -q "uds-common" /root/myapp/tasks.yaml && \
-grep -q "name: dev" /root/myapp/tasks.yaml && \
+grep "UDSBundle" /root/myapp/bundle/uds-bundle.yaml && \
+grep "uds-common" /root/myapp/tasks.yaml && \
+grep "name: dev" /root/myapp/tasks.yaml && \
 echo "Bundle and tasks ready"
 ```

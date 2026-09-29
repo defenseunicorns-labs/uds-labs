@@ -1,0 +1,17 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+kind: ZarfPackageConfig
+metadata:
+  name: release-ledger-repair
+  description: Intentionally broken Release Ledger package for the repair scenario
+  version: dev
+components:
+  - name: release-ledger
+    required: true
+    charts:
+      - name: release-ledger
+        localPath: chart/
+        namespace: release-ledger
+        version: 0.1.0
+    images:
+      - release-ledger:dev

@@ -1,0 +1,36 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+kind: UDSBundle
+metadata:
+  name: release-ledger-postgres
+  description: Release Ledger with operator-managed PostgreSQL
+  version: dev
+packages:
+  - name: postgres-operator
+    repository: ghcr.io/uds-packages/postgres-operator
+    ref: 1.15.1-uds.6-upstream
+    overrides:
+      postgres-operator:
+        uds-postgres-config:
+          values:
+            - path: postgresql
+              value:
+                enabled: true
+                teamId: uds
+                volume:
+                  size: 5Gi
+                numberOfInstances: 1
+                users:
+                  release-ledger-postgres.release_ledger: []
+                databases:
+                  release_ledger: release-ledger-postgres.release_ledger
+                version: "15"
+                # The operator package owns the fixed `postgres` database namespace.
+                # Confirm ingress matches the app namespace and selector.
+                ingress:
+                  - remoteNamespace: release-ledger-postgres
+                    remoteSelector:
+                      app: release-ledger-postgres
+  - name: release-ledger-postgres
+    path: ../
+    ref: dev

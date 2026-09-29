@@ -1,0 +1,17 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release-ledger-config
+  labels:
+    app: release-ledger-minio
+data:
+  STORAGE_MODE: {{ .Values.storage.mode | quote }}
+  DATABASE_HOST: {{ .Values.storage.databaseHost | quote }}
+  DATABASE_NAME: {{ .Values.storage.databaseName | quote }}
+  DATABASE_PORT: "5432"
+  EVIDENCE_STORAGE: {{ .Values.storage.evidenceStorage | quote }}
+  S3_ENDPOINT: {{ .Values.storage.s3Endpoint | quote }}
+  S3_BUCKET: {{ .Values.storage.s3Bucket | quote }}
+  S3_USE_SSL: "false"

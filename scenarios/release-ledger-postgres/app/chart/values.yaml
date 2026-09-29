@@ -1,0 +1,21 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+image: release-ledger:dev
+replicaCount: 1
+containerPort: 8080
+evidenceDir: /tmp/release-ledger/evidence
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+# TODO (learner): confirm the operator-generated Secret name and keep this binding environment-specific.
+storage:
+  mode: postgres
+  databaseHost: pg-cluster.postgres.svc.cluster.local
+  databaseName: release_ledger
+  secretName: release-ledger-postgres.release-ledger.pg-cluster.credentials.postgresql.acid.zalan.do
+  usernameKey: username
+  passwordKey: password

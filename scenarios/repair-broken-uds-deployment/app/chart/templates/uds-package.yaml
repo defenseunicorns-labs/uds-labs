@@ -1,0 +1,35 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: release-ledger
+  namespace: {{ .Release.Namespace }}
+spec:
+  network:
+    serviceMesh:
+      mode: ambient
+    expose:
+      - description: Release Ledger application
+        service: release-ledger-api
+        selector:
+          app: release-ledger
+        gateway: tenant
+        host: release-ledger.customer.example.com
+        port: 80
+        uptime:
+          checks:
+            paths:
+              - /health
+    allow:
+      - direction: Ingress
+        selector:
+          app: release-ledger-api
+        remoteGenerated: IntraNamespace
+        port: 8080
+        description: Allow application ingress
+      - direction: Egress
+        selector:
+          app: release-ledger
+        remoteGenerated: IntraNamespace
+        description: Allow namespace-local egress

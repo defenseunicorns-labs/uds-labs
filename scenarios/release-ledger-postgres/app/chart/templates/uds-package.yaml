@@ -1,0 +1,35 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: release-ledger-postgres
+  namespace: {{ .Release.Namespace }}
+spec:
+  network:
+    serviceMesh:
+      mode: ambient
+    expose:
+      - service: release-ledger-postgres
+        selector:
+          app: release-ledger-postgres
+        gateway: tenant
+        host: release-ledger-postgres
+        port: 8080
+        uptime:
+          checks:
+            paths:
+              - /health
+    allow:
+      - direction: Ingress
+        remoteGenerated: IntraNamespace
+      - direction: Egress
+        remoteGenerated: IntraNamespace
+      - direction: Egress
+        selector:
+          app: release-ledger-postgres
+        remoteNamespace: postgres
+        remoteSelector:
+          cluster-name: pg-cluster
+        port: 5432
+        description: PostgreSQL application access

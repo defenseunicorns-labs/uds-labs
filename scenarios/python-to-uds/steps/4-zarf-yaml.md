@@ -44,7 +44,7 @@ A Zarf package contains exactly one application and its direct Helm chart depend
 ## Verify
 
 ```bash
-grep -q "ZarfPackageConfig" /root/myapp/zarf.yaml && \
-grep -q "myapp:dev" /root/myapp/zarf.yaml && \
+grep "ZarfPackageConfig" /root/myapp/zarf.yaml && \
+grep "myapp:dev" /root/myapp/zarf.yaml && \
 echo "zarf.yaml looks good"
 ```

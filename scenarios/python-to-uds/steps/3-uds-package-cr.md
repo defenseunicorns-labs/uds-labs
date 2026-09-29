@@ -96,8 +96,8 @@ Pepr translates each `allow` entry into a `NetworkPolicy` and an `AuthorizationP
 ## Verify
 
 ```bash
-grep -q "kind: Package" /root/myapp/chart/templates/uds-package.yaml && \
-grep -q "enableAuthserviceSelector" /root/myapp/chart/templates/uds-package.yaml && \
-grep -q "network" /root/myapp/chart/templates/uds-package.yaml && \
+grep "kind: Package" /root/myapp/chart/templates/uds-package.yaml && \
+grep "enableAuthserviceSelector" /root/myapp/chart/templates/uds-package.yaml && \
+grep "network" /root/myapp/chart/templates/uds-package.yaml && \
 echo "Package CR looks good"
 ```

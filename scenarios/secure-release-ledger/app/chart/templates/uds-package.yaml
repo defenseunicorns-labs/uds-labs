@@ -1,0 +1,50 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: secure-release-ledger
+  namespace: {{ .Release.Namespace }}
+spec:
+  sso:
+    - name: Secure Release Ledger
+      clientId: uds-secure-release-ledger
+      redirectUris:
+        - https://secure-release-ledger.{{ .Values.domain }}/login
+      enableAuthserviceSelector:
+        app: secure-release-ledger
+  network:
+    serviceMesh:
+      mode: ambient
+    expose:
+      - service: secure-release-ledger
+        selector:
+          app: secure-release-ledger
+        gateway: tenant
+        host: secure-release-ledger
+        port: 8080
+        uptime:
+          checks:
+            paths:
+              - /health
+    allow:
+      - direction: Ingress
+        remoteGenerated: IntraNamespace
+      - direction: Egress
+        remoteGenerated: IntraNamespace
+      - direction: Egress
+        selector:
+          app: secure-release-ledger
+        remoteNamespace: keycloak
+        remoteSelector:
+          app.kubernetes.io/name: keycloak
+        port: 8080
+        description: Keycloak SSO backend
+      - direction: Egress
+        selector:
+          app: secure-release-ledger
+        remoteNamespace: istio-tenant-gateway
+        remoteSelector:
+          app: tenant-ingressgateway
+        port: 443
+        description: SSO issuer through tenant gateway

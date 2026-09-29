@@ -1,0 +1,18 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: zarf.dev/v1alpha1
+kind: ZarfPackageConfig
+metadata:
+  name: release-ledger-postgres
+  description: Release Ledger PostgreSQL scenario application
+  version: dev
+components:
+  - name: release-ledger-postgres
+    required: true
+    charts:
+      - name: release-ledger-postgres
+        localPath: chart/
+        namespace: release-ledger-postgres
+        version: 0.1.0
+    images:
+      - release-ledger:dev

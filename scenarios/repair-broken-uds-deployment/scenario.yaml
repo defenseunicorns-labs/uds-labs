@@ -1,0 +1,83 @@
+title: "Repair a Broken UDS Deployment"
+description: "Diagnose and repair a UDS package with workload, Service, exposure, and network configuration defects."
+outcome: "Repair a broken package, deploy it through a repeatable UDS workflow, and verify the application through ingress."
+prerequisites:
+  - "Basic Kubernetes and Helm familiarity"
+  - "Basic Zarf and UDS package familiarity"
+duration: 60
+difficulty: intermediate
+orientation:
+  mission: "Take ownership of a package that was handed over with several deployment defects."
+  why: "Production failures often appear at the boundaries between the application, Helm, Zarf, UDS Core, and the deployment environment."
+  starting_point:
+    provided:
+      - "A pre-containerized Release Ledger application"
+      - "A complete but intentionally faulty UDS package"
+      - "A UDS Core lab environment"
+    learner_changes:
+      - "Helm Deployment values and templates"
+      - "Service and UDS Package configuration"
+      - "A repeatable package and bundle deployment workflow"
+    not_required:
+      - "Changing application source code"
+      - "Creating a Kubernetes cluster"
+      - "Adding a database or external service"
+  journey:
+    - title: "Observe the failure"
+      description: "Deploy the submitted package and collect evidence from pods, logs, and rendered resources."
+      purpose: "Learn to diagnose the first causal failure instead of trusting a successful command or a single symptom."
+    - title: "Repair the workload contract"
+      description: "Fix resources, non-root filesystem behavior, and temporary storage through Helm values and templates."
+      purpose: "Make the workload schedulable, startable, and restart-safe without changing the application image."
+    - title: "Repair Service and exposure"
+      description: "Trace the application port through the container, Service, UDS exposure, and uptime check."
+      purpose: "Connect Kubernetes service discovery to the UDS ingress contract."
+    - title: "Repair network policy"
+      description: "Correct the Package CR selector and inspect the generated network behavior."
+      purpose: "Learn how a syntactically valid policy can select the wrong workload."
+    - title: "Rebuild and verify"
+      description: "Run the repeatable workflow and prove the repaired package works through the expected hostname."
+      purpose: "Finish with artifact, runtime, and delayed-health evidence rather than a deploy exit code."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The repaired package and bundle build successfully."
+      - "Release Ledger is reachable at release-ledger.uds.dev and its health endpoint responds."
+      - "You can explain the distinction between the Zarf package, UDS Package CR, and UDS bundle."
+    final_state: "The repaired Release Ledger package is deployed through a repeatable bundle workflow and verified through ingress."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when the lab expires."
+    - "Do not edit app/app.py or repair resources directly in the live cluster."
+browser: true
+image: uds-core
+size: medium
+services:
+  - label: Release Ledger
+    url: https://release-ledger.uds.dev
+tags:
+  - uds
+  - zarf
+  - helm
+  - debugging
+  - networking
+  - production-readiness
+steps:
+  - title: "Observe the failure"
+    text: steps/1-observe-failure.md
+    verify: step1.sh
+  - title: "Repair the workload contract"
+    text: steps/2-repair-workload.md
+    verify: step2.sh
+  - title: "Repair Service and exposure"
+    text: steps/3-repair-routing.md
+    verify: step3.sh
+  - title: "Repair network policy"
+    text: steps/4-repair-network.md
+    verify: step4.sh
+  - title: "Rebuild and verify"
+    text: steps/5-verify.md
+    verify: step5.sh

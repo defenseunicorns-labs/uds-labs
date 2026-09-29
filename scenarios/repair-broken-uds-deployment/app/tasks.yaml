@@ -1,0 +1,15 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# yaml-language-server: $schema=https://raw.githubusercontent.com/defenseunicorns/uds-cli/refs/heads/main/tasks.schema.json
+includes:
+  - setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.25.0/tasks/setup.yaml
+
+tasks:
+  - name: dev
+    description: Build the package, create the bundle, and deploy it
+    actions:
+      - cmd: uds zarf package create . --confirm --skip-sbom --no-progress
+      - cmd: uds create bundle/ --confirm --no-progress
+      # Bound package health checks so a broken first deployment returns control
+      # to the learner instead of waiting on the CLI's long default timeout.
+      - cmd: timeout --foreground 5m uds deploy bundle/uds-bundle-release-ledger-repair-amd64-dev.tar.zst --confirm --no-progress

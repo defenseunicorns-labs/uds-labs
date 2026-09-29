@@ -1,0 +1,79 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: release-ledger-postgres
+  labels:
+    app: release-ledger-postgres
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: release-ledger-postgres
+  template:
+    metadata:
+      labels:
+        app: release-ledger-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: release-ledger
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: STORAGE_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: release-ledger-config
+                  key: STORAGE_MODE
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: release-ledger-config
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: release-ledger-config
+                  key: DATABASE_PORT
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: release-ledger-config
+                  key: DATABASE_NAME
+            # TODO (learner): use operator Secret keys, never a literal username/password.
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.secretName | quote }}
+                  key: {{ .Values.storage.usernameKey | quote }}
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.secretName | quote }}
+                  key: {{ .Values.storage.passwordKey | quote }}
+            - name: EVIDENCE_DIR
+              value: {{ .Values.evidenceDir | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: evidence
+              mountPath: {{ .Values.evidenceDir | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+      volumes:
+        - name: evidence
+          emptyDir: {}

@@ -1,0 +1,84 @@
+title: "Add Durable Object Storage to Release Ledger"
+description: "Extend the PostgreSQL-backed Release Ledger with operator-managed MinIO for durable evidence content and production-shaped resource settings."
+outcome: "Configure scoped object-storage credentials, network access, and resource settings, then prove evidence survives pod replacement."
+prerequisites:
+  - "Completion of Connect Release Ledger to PostgreSQL"
+  - "Basic Kubernetes, Helm, and UDS bundle familiarity"
+duration: 45
+difficulty: advanced
+orientation:
+  mission: "Make uploaded evidence durable while preserving the application's database-backed metadata."
+  why: "Production deployments separate metadata from object content and bind both through explicit, environment-specific contracts."
+  starting_point:
+    provided:
+      - "The completed Release Ledger application image"
+      - "PostgreSQL and MinIO bundle dependency templates"
+      - "A UDS Core lab environment"
+    learner_changes:
+      - "MinIO tenant, bucket, and scoped-user configuration"
+      - "Object-storage ConfigMap and Secret references"
+      - "Resource and storage overrides for a constrained lab"
+    not_required:
+      - "Changing application code"
+      - "Creating a cluster"
+      - "Committing object-storage credentials"
+  journey:
+    - title: "Separate metadata from content"
+      description: "Trace evidence metadata in PostgreSQL and bytes in the content-store interface."
+      purpose: "Choose the right durable system for each part of the application state."
+    - title: "Provision a scoped MinIO app"
+      description: "Configure a tenant bucket and copied application Secret in the bundle."
+      purpose: "Avoid root credentials and keep object access scoped to the application."
+    - title: "Bind endpoint and credentials"
+      description: "Wire endpoint and bucket through ConfigMap data and access keys through Secret references."
+      purpose: "Keep the application package portable and credential-free."
+    - title: "Apply production-shaped constraints"
+      description: "Render a small lab profile and compare it with a larger production example."
+      purpose: "Make resource and storage intent visible without deploying an oversized profile."
+    - title: "Verify object durability"
+      description: "Upload, download, checksum, delete, and repeat the content check after pod replacement."
+      purpose: "Prove the full object lifecycle through the application API."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The application consumes the copied MinIO Secret without literals."
+      - "Evidence content survives application pod replacement and deletion removes the object."
+      - "Storage and workload resources are explicit and environment-overridable."
+    final_state: "Release Ledger uses PostgreSQL for metadata and MinIO for durable evidence content."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when the lab expires."
+    - "Confirm the live copied Secret keys and endpoint in the target package version before relying on assumptions."
+    - "Use the scoped application credentials, not MinIO root credentials."
+browser: true
+image: uds-core
+size: large
+services:
+  - label: Release Ledger
+    url: https://release-ledger-minio.uds.dev
+tags:
+  - uds
+  - zarf
+  - helm
+  - postgres
+  - minio
+  - storage
+steps:
+  - title: "Separate metadata from content"
+    text: steps/1-storage-contract.md
+    verify: step1.sh
+  - title: "Provision a scoped MinIO app"
+    text: steps/2-minio-bundle.md
+    verify: step2.sh
+  - title: "Bind endpoint and credentials"
+    text: steps/3-workload-wiring.md
+    verify: step3.sh
+  - title: "Apply production-shaped constraints"
+    text: steps/4-resources.md
+    verify: step4.sh
+  - title: "Verify object durability"
+    text: steps/5-verify.md
+    verify: step5.sh

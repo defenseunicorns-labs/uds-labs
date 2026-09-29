@@ -1,0 +1,11 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+includes:
+  - setup: https://raw.githubusercontent.com/defenseunicorns/uds-common/v1.25.0/tasks/setup.yaml
+tasks:
+  - name: dev
+    description: Build, bundle, and deploy Release Ledger with PostgreSQL and MinIO
+    actions:
+      - cmd: uds zarf package create . --confirm --skip-sbom --no-progress
+      - cmd: uds create bundle/ --confirm --no-progress
+      - cmd: uds deploy bundle/uds-bundle-release-ledger-minio-amd64-dev.tar.zst --confirm --no-progress

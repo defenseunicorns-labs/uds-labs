@@ -1,0 +1,18 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: zarf.dev/v1alpha1
+kind: ZarfPackageConfig
+metadata:
+  name: release-ledger-minio
+  description: Release Ledger PostgreSQL and MinIO scenario application
+  version: dev
+components:
+  - name: release-ledger-minio
+    required: true
+    charts:
+      - name: release-ledger-minio
+        localPath: chart/
+        namespace: release-ledger-minio
+        version: 0.1.0
+    images:
+      - release-ledger:dev

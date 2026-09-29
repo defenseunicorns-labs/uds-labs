@@ -1,0 +1,111 @@
+title: "Connect Release Ledger to PostgreSQL"
+description: "Replace in-memory metadata with an operator-managed PostgreSQL database and verify records survive pod replacement."
+outcome: "Wire an application to operator-generated credentials and prove database-backed data survives a restart."
+prerequisites:
+  - "A containerized application"
+  - "Basic Kubernetes, Helm, and UDS bundle familiarity"
+duration: 45
+difficulty: advanced
+orientation:
+  mission: "Give Release Ledger durable metadata without changing its application image."
+  why: "Production-shaped packages separate application configuration, dependency composition, generated credentials, and network policy."
+  starting_point:
+    provided:
+      - "A complete Release Ledger image with PostgreSQL support"
+      - "A package workspace with focused configuration gaps"
+      - "A UDS Core lab environment"
+    learner_changes:
+      - "PostgreSQL dependency configuration in the bundle"
+      - "ConfigMap and Secret references in the Helm workload"
+      - "Application and database-side network declarations"
+    not_required:
+      - "Writing application code"
+      - "Creating a Kubernetes cluster"
+      - "Committing a database password"
+  journey:
+    - title: "Trace the storage contract"
+      description: "Inspect the application settings and identify which values are sensitive."
+      purpose: "Separate runtime configuration from credentials before editing manifests."
+    - title: "Compose PostgreSQL"
+      description: "Add the pinned operator package, database, user, and application ingress configuration."
+      purpose: "Keep backing services at the bundle layer and use the operator's application role."
+    - title: "Bind the workload"
+      description: "Wire non-secret settings through a ConfigMap and generated username/password keys through Secret references."
+      purpose: "Make the application package portable across environments without embedding credentials."
+    - title: "Allow the traffic"
+      description: "Add reciprocal application egress and database ingress rules, then inspect rendered resources."
+      purpose: "Understand that cross-namespace network access is a two-sided contract."
+    - title: "Verify durability"
+      description: "Create a release, replace the application pod, and read it back through the API."
+      purpose: "Prove the configuration with a real database write/read rather than pod readiness alone."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The application uses Secret references for the database username and password."
+      - "A release survives application pod replacement."
+      - "No credential literal is stored in the application package."
+    final_state: "Release Ledger stores release metadata in operator-managed PostgreSQL and remains reachable through UDS ingress."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when the lab expires."
+    - "Never connect the application as the postgres superuser; use the generated application role."
+    - "The exact generated Secret must be confirmed in the target cluster rather than guessed from memory."
+browser: true
+image: uds-core
+size: large
+services:
+  - label: Release Ledger
+    url: https://release-ledger-postgres.uds.dev
+tags:
+  - uds
+  - zarf
+  - helm
+  - postgres
+  - secrets
+preview:
+  fixture: app
+  workspace: /root/release-ledger-postgres
+  checks:
+    - step: 1
+      path: app.py
+      contains: ["DATABASE_USER", "DATABASE_PASSWORD", "STORAGE_MODE"]
+    - step: 2
+      path: bundle/uds-bundle.yaml
+      contains: ["postgres-operator", "users:", "databases:", "ingress:"]
+    - step: 3
+      path: chart/templates/deployment.yaml
+      contains: ["configMapKeyRef", "secretKeyRef", "usernameKey", "passwordKey"]
+    - step: 3
+      path: chart/values.yaml
+      contains: ["usernameKey: username", "passwordKey: password"]
+    - step: 4
+      path: chart/templates/uds-package.yaml
+      contains: ["remoteNamespace: postgres", "cluster-name: pg-cluster", "port: 5432"]
+    - step: 4
+      path: bundle/uds-bundle.yaml
+      contains: ["remoteNamespace: release-ledger-postgres"]
+    - step: 5
+      path: zarf.yaml
+      contains: ["ZarfPackageConfig", "release-ledger:dev"]
+    - step: 5
+      path: tasks.yaml
+      contains: ["uds-common", "name: dev"]
+steps:
+  - title: "Trace the storage contract"
+    text: steps/1-storage-contract.md
+    verify: step1.sh
+  - title: "Compose PostgreSQL in the bundle"
+    text: steps/2-postgres-bundle.md
+    verify: step2.sh
+  - title: "Bind ConfigMap and Secret values"
+    text: steps/3-workload-wiring.md
+    verify: step3.sh
+  - title: "Configure reciprocal network access"
+    text: steps/4-network.md
+    verify: step4.sh
+  - title: "Verify data survives replacement"
+    text: steps/5-verify.md
+    verify: step5.sh

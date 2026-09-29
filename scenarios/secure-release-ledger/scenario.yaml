@@ -1,0 +1,83 @@
+title: "Secure an Existing App with UDS SSO"
+description: "Protect a stateless Release Ledger deployment with UDS Authservice and troubleshoot the selector and redirect contract."
+outcome: "Configure Authservice protection and prove unauthenticated traffic redirects while authenticated traffic reaches the app."
+prerequisites:
+  - "Basic Kubernetes and Helm familiarity"
+  - "Basic UDS Package CR familiarity"
+duration: 45
+difficulty: advanced
+orientation:
+  mission: "Add platform-managed login to an existing application without teaching the application a second authentication system."
+  why: "UDS Authservice protects applications at the platform boundary; the Package CR must create the client and select the exact workload and Service."
+  starting_point:
+    provided:
+      - "A complete stateless Release Ledger package"
+      - "A UDS Core environment with Keycloak and Authservice"
+      - "An intentionally incomplete SSO Package CR"
+    learner_changes:
+      - "Authservice client and redirect configuration"
+      - "Matching pod and Service selectors"
+      - "Rendered and live SSO troubleshooting checks"
+    not_required:
+      - "Adding OIDC code to the application"
+      - "Creating a Keycloak client manually"
+      - "Persisting application data"
+  journey:
+    - title: "Choose the auth boundary"
+      description: "Inspect the app and decide why Authservice, not native application OIDC, is the right integration."
+      purpose: "Avoid creating two competing authentication flows."
+    - title: "Register the Authservice client"
+      description: "Configure the Package CR with a non-root redirect URI and an Authservice selector."
+      purpose: "Have UDS Core create the client and generated protection resources."
+    - title: "Trace selectors and routing"
+      description: "Compare the selector against both pod labels and the Service selector, then inspect the rendered CR."
+      purpose: "Prevent the common 503 caused by selecting only one side of the workload boundary."
+    - title: "Deploy and troubleshoot"
+      description: "Inspect Package status, generated resources, and gateway behavior after deployment."
+      purpose: "Diagnose platform state instead of trusting a deploy exit code."
+    - title: "Prove protected access"
+      description: "Show unauthenticated redirect and complete an authenticated browser request."
+      purpose: "Verify the actual security behavior through the tenant hostname."
+  success:
+    criteria:
+      - "Every guided checkpoint passes."
+      - "The Package CR has an Authservice selector matching pods and Service."
+      - "The redirect URI uses a specific path such as /login."
+      - "Unauthenticated requests redirect to SSO and authenticated access reaches Release Ledger."
+    final_state: "Release Ledger is protected by UDS Authservice without application-source changes."
+  tools:
+    - "Terminal"
+    - "Web IDE"
+    - "Browser"
+  important_notes:
+    - "The VM is temporary and will be removed when the lab expires."
+    - "Authservice is the lesson here; do not add native OIDC settings to the application."
+    - "Use Package status and generated resources as runtime evidence."
+browser: true
+image: uds-core
+size: medium
+services:
+  - label: Protected Release Ledger
+    url: https://secure-release-ledger.uds.dev
+tags:
+  - uds
+  - keycloak
+  - authservice
+  - istio
+  - security
+steps:
+  - title: "Choose the auth boundary"
+    text: steps/1-auth-boundary.md
+    verify: step1.sh
+  - title: "Register the Authservice client"
+    text: steps/2-sso-client.md
+    verify: step2.sh
+  - title: "Trace selectors and routing"
+    text: steps/3-selectors.md
+    verify: step3.sh
+  - title: "Deploy and troubleshoot"
+    text: steps/4-deploy.md
+    verify: step4.sh
+  - title: "Prove protected access"
+    text: steps/5-verify.md
+    verify: step5.sh

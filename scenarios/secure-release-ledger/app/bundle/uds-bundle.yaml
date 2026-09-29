@@ -1,0 +1,11 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+kind: UDSBundle
+metadata:
+  name: secure-release-ledger
+  description: Authservice-protected Release Ledger
+  version: dev
+packages:
+  - name: secure-release-ledger
+    path: ../
+    ref: dev

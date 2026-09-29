@@ -1,0 +1,27 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+image: release-ledger:dev
+replicaCount: 1
+containerPort: 8080
+evidenceDir: /tmp/release-ledger/evidence
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+# TODO (learner): confirm the copied Secret keys and tenant endpoint for this package version.
+storage:
+  mode: postgres
+  databaseHost: pg-cluster.postgres.svc.cluster.local
+  databaseName: release_ledger
+  databaseSecretName: release-ledger-minio.release-ledger.pg-cluster.credentials.postgresql.acid.zalan.do
+  databaseUsernameKey: username
+  databasePasswordKey: password
+  evidenceStorage: minio
+  s3Endpoint: uds-minio-hl.minio.svc.cluster.local:9000
+  s3Bucket: evidence
+  minioSecretName: release-ledger-minio
+  accessKeyKey: access_key
+  secretKeyKey: secret_key

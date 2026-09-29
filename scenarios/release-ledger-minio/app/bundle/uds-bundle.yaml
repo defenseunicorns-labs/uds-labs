@@ -1,0 +1,65 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+kind: UDSBundle
+metadata:
+  name: release-ledger-minio
+  description: Release Ledger with PostgreSQL and MinIO
+  version: dev
+packages:
+  - name: postgres-operator
+    repository: ghcr.io/uds-packages/postgres-operator
+    ref: 1.15.1-uds.6-upstream
+    overrides:
+      postgres-operator:
+        uds-postgres-config:
+          values:
+            - path: postgresql
+              value:
+                enabled: true
+                teamId: uds
+                volume:
+                  size: 5Gi
+                numberOfInstances: 1
+                users:
+                  release-ledger-minio.release_ledger: []
+                databases:
+                  release_ledger: release-ledger-minio.release_ledger
+                version: "15"
+                ingress:
+                  - remoteNamespace: release-ledger-minio
+                    remoteSelector:
+                      app: release-ledger-minio
+  - name: minio-operator
+    repository: ghcr.io/uds-packages/minio-operator
+    ref: 7.1.1-uds.25-upstream
+    overrides:
+      minio-operator:
+        uds-minio-config:
+          values:
+            - path: apps
+              value:
+                - name: release-ledger
+                  namespace: release-ledger-minio
+                  remoteSelector:
+                    app: release-ledger-minio
+                  bucketNames:
+                    - evidence
+                  policy: ""
+                  # TODO (learner): confirm the copied Secret name and key contract.
+                  copyPassword:
+                    enabled: true
+                    secretName: release-ledger-minio
+                    secretIDKey: access_key
+                    secretPasswordKey: secret_key
+        minio-tenant:
+          values:
+            - path: tenant.pools
+              value:
+                - name: pool-0
+                  # MinIO standalone mode requires one server with four volumes.
+                  servers: 1
+                  volumesPerServer: 4
+                  size: 5Gi
+  - name: release-ledger-minio
+    path: ../
+    ref: dev

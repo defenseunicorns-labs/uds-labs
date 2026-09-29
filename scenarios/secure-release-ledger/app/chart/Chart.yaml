@@ -1,0 +1,7 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: v2
+name: secure-release-ledger
+version: 0.1.0
+appVersion: "1.0.0"
+type: application

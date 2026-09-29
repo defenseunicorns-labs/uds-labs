@@ -6,6 +6,10 @@ sections:
       - scenario: uds-reference-package
       - scenario: python-to-uds
       - scenario: release-ledger
+      - scenario: release-ledger-postgres
+      - scenario: release-ledger-minio
+      - scenario: repair-broken-uds-deployment
+      - scenario: secure-release-ledger
 
   - id: playgrounds
     title: Playgrounds
