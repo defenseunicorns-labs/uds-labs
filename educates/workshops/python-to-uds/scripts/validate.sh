@@ -46,6 +46,10 @@ grep -q 'kind: ServiceEntry' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: Package' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: Package' "${tmp}/portal-manifests.yaml"
 grep -q 'host: uds-labs-ui' "${tmp}/portal-manifests.yaml"
+if grep -q 'imagePullPolicy:' "${tmp}/workshop-manifests.yaml"; then
+  echo 'Educates 4.0 Workshop CRD does not support spec.workshop.imagePullPolicy' >&2
+  exit 1
+fi
 grep -q 'arm64)' "${root}/Dockerfile"
 grep -q 'amd64)' "${root}/Dockerfile"
 

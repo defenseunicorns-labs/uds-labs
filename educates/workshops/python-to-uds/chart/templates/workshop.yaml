@@ -12,7 +12,6 @@ spec:
   difficulty: intermediate
   workshop:
     image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-    imagePullPolicy: {{ .Values.image.pullPolicy }}
   environment:
     objects:
       # Sessions share this backend namespace. Exactly one Package manages it.

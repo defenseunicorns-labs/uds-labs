@@ -14,7 +14,7 @@ uds run educates:create-bundle
 Deploy to a disposable arm64 Kubernetes 1.31+ cluster with UDS Core base and DNS matching the tenant gateway domain:
 
 ```bash
-uds deploy educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.0.tar.zst \
+uds deploy educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.1.tar.zst \
   --set DOMAIN=uds.dev \
   --confirm
 ```

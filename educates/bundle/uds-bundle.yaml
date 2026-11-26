@@ -3,7 +3,7 @@ kind: UDSBundle
 metadata:
   name: educates-uds-labs-spike
   description: Educates platform and Python-to-UDS workshop
-  version: 0.3.0
+  version: 0.3.1
 
 packages:
   - name: educates
@@ -19,4 +19,4 @@ packages:
               default: uds.dev
   - name: educates-python-to-uds
     path: ../workshops/python-to-uds
-    ref: 0.2.0-uds.0
+    ref: 0.2.0-uds.1

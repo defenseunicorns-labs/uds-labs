@@ -15,7 +15,6 @@ spec:
   difficulty: intermediate
   workshop:
     image: "ghcr.io/defenseunicorns-labs/educates-python-to-uds-image:0.1.0"
-    imagePullPolicy: IfNotPresent
   environment:
     objects:
       # Sessions share this backend namespace. Exactly one Package manages it.

@@ -5,7 +5,7 @@ kind: ZarfPackageConfig
 metadata:
   name: educates-python-to-uds
   description: ARM64 Educates workshop for packaging a stateless application for UDS
-  version: 0.2.0-uds.0
+  version: 0.2.0-uds.1
 
 values:
   files:
