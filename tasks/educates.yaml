@@ -17,25 +17,22 @@ tasks:
           WORKSHOP_MANIFEST=$(mktemp)
           trap 'rm -f "$PLATFORM_MANIFEST" "$WORKSHOP_MANIFEST"' EXIT
 
-          grep -q '__EDUCATES_DOMAIN__' educates/packages/platform/chart/files/educates.yaml
-          test "$(uds zarf tools yq -r 'select(.kind == "Namespace") | .metadata.name' \
-            educates/packages/platform/chart/files/educates.yaml \
-            | grep -Ec '^(educates|kyverno|projectcontour)$')" -eq 3
-
           uds zarf dev inspect manifests educates/packages/platform \
             --set-values domain=workshops.example.test > "$PLATFORM_MANIFEST"
           grep -q 'workshops.example.test' "$PLATFORM_MANIFEST"
-          ! grep -q '__EDUCATES_DOMAIN__' "$PLATFORM_MANIFEST"
+          grep -q 'kind: Package' "$PLATFORM_MANIFEST"
+          grep -q 'name: educates-platform' "$PLATFORM_MANIFEST"
+          grep -q 'ghcr.io/educates/educates-session-manager:4.0.0-alpha.10' \
+            "$PLATFORM_MANIFEST"
+          ! grep -q 'kind: ClusterPolicy' "$PLATFORM_MANIFEST"
+          ! uds zarf tools yq -e \
+            'select(.kind == "Namespace" and .metadata.name == "projectcontour")' \
+            "$PLATFORM_MANIFEST" >/dev/null 2>&1
 
           uds zarf dev inspect manifests educates/workshops/python-to-uds \
             --set-values portal.sessionsMaximum=2 \
             --set-values portal.anonymousMaximum=2 > "$WORKSHOP_MANIFEST"
           grep -q 'maximum: 2' "$WORKSHOP_MANIFEST"
-
-  - name: render-platform
-    description: Regenerate platform manifests with the official Educates CLI container
-    actions:
-      - cmd: ./educates/packages/platform/scripts/render-manifests.sh
 
   - name: build-image
     description: Build the arm64 Python-to-UDS workshop image
@@ -74,6 +71,22 @@ tasks:
             --architecture="${{ .inputs.architecture }}" \
             --skip-sbom \
             --confirm
+
+  - name: create-platform-bundle
+    description: Create a standalone UDS bundle containing only the Educates platform
+    inputs:
+      architecture:
+        description: Target bundle architecture
+        default: arm64
+    actions:
+      - task: create-platform-package
+        with:
+          architecture: ${{ .inputs.architecture }}
+      - cmd: |
+          uds create educates/packages/platform/bundle \
+            --architecture="${{ .inputs.architecture }}" \
+            --confirm \
+            --no-progress
 
   - name: create-workshop-package
     description: Build the workshop image and create its Zarf package

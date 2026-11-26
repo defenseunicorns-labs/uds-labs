@@ -1,7 +1,7 @@
 ---
 apiVersion: v2
-name: educates
-description: Rendered Educates 3.8.0 platform, Contour, and Kyverno resources
+name: uds-educates-platform-config
+description: UDS Core configuration for the Educates training platform
 type: application
-version: 3.8.0-uds.0
-appVersion: "3.8.0"
+version: 0.1.0
+appVersion: "4.0.0-alpha.10"

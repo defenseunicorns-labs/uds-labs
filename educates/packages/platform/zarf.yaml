@@ -4,8 +4,8 @@ apiVersion: zarf.dev/v1beta1
 kind: ZarfPackageConfig
 metadata:
   name: educates
-  description: Educates training platform with Contour and Kyverno
-  version: 3.8.0-uds.0
+  description: Upstream Educates Helm runtime integrated with UDS Core
+  version: 4.0.0-alpha.10-uds.0
 
 values:
   files:
@@ -14,30 +14,45 @@ values:
 
 components:
   - name: platform
-    description: Educates controllers, Contour ingress, and Kyverno policy engine
+    description: Educates controllers and declarative UDS Core integration
     charts:
-      - name: educates
+      - name: uds-educates-platform-config
         local:
           path: chart
-        namespace: educates
+        namespace: educates-platform
+      - name: educates-training-platform
+        releaseName: educates-platform
+        oci:
+          url: oci://ghcr.io/educates/charts/educates-training-platform
+          ref:
+            digest: sha256:4db518658f044fea7aa5a968df6c2caadee94ec202819f1d092e57fe06c56757
+        namespace: educates-platform
+        skipWait: true
+        valuesFiles:
+          - path: values/common-values.yaml
+          - path: values/upstream-values.yaml
         values:
           - sourcePath: .domain
-            targetPath: .domain
+            targetPath: .global.clusterIngress.domain
+    actions:
+      onDeploy:
+        onSuccess:
+          - wait:
+              cluster:
+                kind: Deployment
+                name: session-manager
+                namespace: educates-platform
+            maxTotalSeconds: 300
+          - wait:
+              cluster:
+                kind: Deployment
+                name: secrets-manager
+                namespace: educates-platform
+            maxTotalSeconds: 300
     images:
-      - name: docker.io/envoyproxy/envoy:v1.31.5
-      - name: ghcr.io/educates/educates-base-environment:3.8.0
-      - name: ghcr.io/educates/educates-pause-container:3.8.0
-      - name: ghcr.io/educates/educates-secrets-manager:3.8.0
-      - name: ghcr.io/educates/educates-session-manager:3.8.0
-      - name: ghcr.io/educates/educates-training-portal:3.8.0
-      - name: ghcr.io/projectcontour/contour:v1.30.2
-      - name: reg.kyverno.io/kyverno/background-controller:v1.15.1
-      - name: reg.kyverno.io/kyverno/cleanup-controller:v1.15.1
-      - name: reg.kyverno.io/kyverno/kyvernopre:v1.15.1
-      - name: reg.kyverno.io/kyverno/kyverno:v1.15.1
-      - name: reg.kyverno.io/kyverno/reports-controller:v1.15.1
-
-  - name: docker-support
-    description: Privileged per-session Docker daemon used by packaging workshops
-    images:
+      - name: ghcr.io/educates/educates-session-manager:4.0.0-alpha.10
+      - name: ghcr.io/educates/educates-secrets-manager:4.0.0-alpha.10
+      # Runtime-spawned workloads are absent from Helm image discovery.
+      - name: ghcr.io/educates/educates-training-portal:4.0.0-alpha.10
+      - name: ghcr.io/educates/educates-base-environment:4.0.0-alpha.10
       - name: docker.io/library/docker:27.5.1-dind

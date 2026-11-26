@@ -1,0 +1,19 @@
+---
+kind: UDSBundle
+metadata:
+  name: educates-platform
+  description: Standalone Educates runtime for an existing UDS Core cluster
+  version: 4.0.0-alpha.10-uds.0
+
+packages:
+  - name: educates
+    path: ../
+    ref: 4.0.0-alpha.10-uds.0
+    overrides:
+      platform:
+        educates-training-platform:
+          variables:
+            - path: global.clusterIngress.domain
+              name: DOMAIN
+              description: Domain shared by Educates URLs and the UDS tenant gateway
+              default: uds.dev

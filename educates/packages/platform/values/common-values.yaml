@@ -1,0 +1,37 @@
+---
+global:
+  clusterIngress:
+    class: educates-unused
+    protocol: https
+  clusterSecurity:
+    policyEngine: None
+lookup-service:
+  enabled: false
+remote-access:
+  enabled: false
+node-ca-injector:
+  enabled: false
+session-manager:
+  enabled: true
+  clusterAdmin: false
+  workshopSecurity:
+    rulesEngine: None
+  imagePrePuller:
+    enabled: false
+  secretPropagation:
+    imagePullSecretNames:
+      - private-registry
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+secrets-manager:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi

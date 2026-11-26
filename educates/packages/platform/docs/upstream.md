@@ -1,18 +1,12 @@
 # Upstream provenance
 
 - Project: [Educates Training Platform](https://github.com/educates/educates-training-platform)
-- Release: `3.8.0`
+- Chart: `oci://ghcr.io/educates/charts/educates-training-platform`
+- Release: `4.0.0-alpha.10`
+- Chart digest: `sha256:4db518658f044fea7aa5a968df6c2caadee94ec202819f1d092e57fe06c56757`
+- Source revision: [`25dd76f65011b07b6eee2c65fe1d1bceb71f74c1`](https://github.com/educates/educates-training-platform/tree/25dd76f65011b07b6eee2c65fe1d1bceb71f74c1)
 - License: Apache-2.0
-- Renderer: `educates-linux-{amd64,arm64}` release binary, executed inside the validation/rendering container
-- Configuration input: [`config/installer.yaml`](../config/installer.yaml)
-- Generated output: [`chart/files/educates.yaml`](../chart/files/educates.yaml)
 
-Regenerate deterministically with:
+The package consumes the official OCI chart directly and does not vendor or regenerate upstream manifests. The local chart contains only UDS Core integration, a controllerless IngressClass, and the alpha.10 RBAC corrections documented in [`justifications.md`](justifications.md).
 
-```bash
-./scripts/render-manifests.sh
-```
-
-The script executes the official Educates CLI container but explicitly passes `--version 3.8.0`; the upstream `educates-cli:3.8.0` container reports a compiled default version of `develop`, so relying on its default would fetch the wrong installer bundle.
-
-The only post-render transformation replaces the domain sentinel with `__EDUCATES_DOMAIN__`. The Helm wrapper replaces that sentinel from the package's `domain` value at deployment time.
+Educates 4.0.0-alpha.10 requires Kubernetes 1.31 or newer and remains a prerelease. Update the chart digest, chart release, explicitly listed images, `appVersion`, and package version together.

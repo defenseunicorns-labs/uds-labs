@@ -8,7 +8,6 @@ ignore:
   - "chart/templates/**"
   - "packages/vm-images/chart/templates/**"
   - "educates/**/chart/templates/**"
-  - "educates/packages/platform/chart/files/**"
 
 rules:
   anchors: enable

@@ -5,8 +5,10 @@
   "properties": {
     "domain": {
       "type": "string",
+      "description": "Domain shared by Educates-generated URLs and the UDS tenant gateway.",
       "minLength": 1,
-      "description": "Wildcard parent domain used by Educates ingresses"
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "default": "uds.dev"
     }
   },
   "required": ["domain"]

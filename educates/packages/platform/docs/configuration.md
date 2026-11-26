@@ -1,25 +1,25 @@
 # Configuration
 
-The Educates platform package exposes one Zarf package value:
+Educates 4.0.0-alpha.10 requires Kubernetes 1.31 or newer, UDS Core base with ambient mesh and a tenant gateway, a Zarf-initialized registry, and a default StorageClass.
+
+The package exposes one Zarf package value:
 
 | Key | Default | Description |
 |---|---|---|
-| `domain` | `educates.uds.dev` | Wildcard parent domain used for portals, sessions, and application ingresses. |
+| `domain` | `uds.dev` | Domain shared by Educates-generated URLs and the UDS tenant gateway. |
 
-Deploy the standalone package with a non-default value:
+Deploy the standalone bundle with a non-default value:
 
 ```bash
-uds zarf package deploy zarf-package-educates-arm64-3.8.0-uds.0.tar.zst \
-  --set-values domain=educates.example.com \
+uds deploy bundle/uds-bundle-educates-platform-arm64-4.0.0-alpha.10-uds.0.tar.zst \
+  --set DOMAIN=example.com \
   --confirm
 ```
 
-The spike bundle maps its deploy-time `DOMAIN` variable to this chart value:
+For direct Zarf package deployment, use `--set-values domain=example.com`.
 
-```bash
-uds deploy uds-bundle-educates-uds-labs-spike-arm64-0.1.0.tar.zst \
-  --set DOMAIN=educates.example.com \
-  --confirm
-```
+The upstream chart's Ingress objects remain inactive through the controllerless `educates-unused` IngressClass. Each workshop package is responsible for UDS `Package` exposures for its portal and dynamically created sessions.
 
-Wildcard DNS for the selected domain must resolve to the external address of the `envoy` LoadBalancer Service in the `projectcontour` namespace.
+Only session-manager and secrets-manager are enabled. Lookup service, remote access, node CA injection, image pre-pull, upstream policy engines, and optional registry/assets features are disabled. UDS owns policy and mesh enrollment.
+
+The chart uses `skipWait` because statusless `SecretInjector` resources cannot satisfy generic kstatus waiting. Zarf instead health-checks the session-manager and secrets-manager Deployments.

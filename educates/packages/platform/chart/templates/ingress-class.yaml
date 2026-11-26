@@ -1,0 +1,11 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Deliberately has no controller. UDS Package exposures own public routing.
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: educates-unused
+spec:
+  controller: educates.dev/unused

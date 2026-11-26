@@ -1,0 +1,16 @@
+---
+session-manager:
+  image:
+    repository: ghcr.io/educates/educates-session-manager
+    tag: 4.0.0-alpha.10
+  imageVersions:
+    - name: training-portal
+      image: ghcr.io/educates/educates-training-portal:4.0.0-alpha.10
+    - name: base-environment
+      image: ghcr.io/educates/educates-base-environment:4.0.0-alpha.10
+    - name: docker-in-docker
+      image: docker.io/library/docker:27.5.1-dind
+secrets-manager:
+  image:
+    repository: ghcr.io/educates/educates-secrets-manager
+    tag: 4.0.0-alpha.10

@@ -1,1 +1,0 @@
-{{- .Files.Get "files/educates.yaml" | replace "__EDUCATES_DOMAIN__" .Values.domain -}}

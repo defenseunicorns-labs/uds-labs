@@ -1,0 +1,28 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+---
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: educates-platform
+  namespace: {{ .Release.Namespace }}
+spec:
+  network:
+    serviceMesh:
+      mode: ambient
+    allow:
+      - description: Platform controller ingress within namespace
+        direction: Ingress
+        remoteGenerated: IntraNamespace
+      - description: Platform controller egress within namespace
+        direction: Egress
+        remoteGenerated: IntraNamespace
+      - description: Educates controllers reconcile Kubernetes resources
+        direction: Egress
+        remoteGenerated: KubeAPI
+        selector:
+          app.kubernetes.io/part-of: educates
+      {{- with .Values.additionalNetworkAllow }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}

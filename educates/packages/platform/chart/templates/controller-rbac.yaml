@@ -1,0 +1,75 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Kopf CRD discovery is missing from the upstream alpha.10 roles.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: educates-platform-crd-reader
+rules:
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: educates-platform-crd-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: educates-platform-crd-reader
+subjects:
+  - kind: ServiceAccount
+    name: session-manager
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: secrets-manager
+    namespace: {{ .Release.Namespace }}
+---
+# Trusted controller only. Do not aggregate into learner edit/admin roles.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: educates-platform-package-lifecycle
+rules:
+  - apiGroups:
+      - uds.dev
+    resources:
+      - packages
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - networking.istio.io
+    resources:
+      - serviceentries
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: educates-platform-package-lifecycle
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: educates-platform-package-lifecycle
+subjects:
+  - kind: ServiceAccount
+    name: session-manager
+    namespace: {{ .Release.Namespace }}

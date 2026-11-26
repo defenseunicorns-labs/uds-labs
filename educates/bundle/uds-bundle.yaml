@@ -3,20 +3,20 @@ kind: UDSBundle
 metadata:
   name: educates-uds-labs-spike
   description: Educates platform and Python-to-UDS workshop
-  version: 0.1.0
+  version: 0.2.0
 
 packages:
   - name: educates
     path: ../packages/platform
-    ref: 3.8.0-uds.0
+    ref: 4.0.0-alpha.10-uds.0
     overrides:
       platform:
-        educates:
+        educates-training-platform:
           variables:
-            - path: domain
+            - path: global.clusterIngress.domain
               name: DOMAIN
-              description: Wildcard parent domain used by Educates ingresses
-              default: educates.uds.dev
+              description: Domain shared by Educates URLs and the UDS tenant gateway
+              default: uds.dev
   - name: educates-python-to-uds
     path: ../workshops/python-to-uds
     ref: 0.1.0

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG EDUCATES_VERSION=3.8.0
+ARG EDUCATES_VERSION=4.0.0-alpha.10
 FROM ghcr.io/educates/educates-base-environment:${EDUCATES_VERSION}
 
 ARG TARGETARCH
