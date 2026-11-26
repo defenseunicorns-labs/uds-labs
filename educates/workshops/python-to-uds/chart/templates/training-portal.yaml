@@ -1,0 +1,18 @@
+apiVersion: training.educates.dev/v1beta1
+kind: TrainingPortal
+metadata:
+  name: {{ .Values.portal.name }}
+spec:
+  portal:
+    registration:
+      type: anonymous
+    catalog:
+      visibility: public
+    sessions:
+      maximum: {{ .Values.portal.sessionsMaximum }}
+      anonymous: {{ .Values.portal.anonymousMaximum }}
+  workshops:
+    - name: {{ .Values.workshop.name }}
+      capacity: {{ .Values.portal.sessionsMaximum }}
+      reserved: {{ .Values.workshop.reserved }}
+      expires: {{ .Values.workshop.expires }}

@@ -1,2 +1,5 @@
 *
 !Dockerfile
+!README.md
+!workshop/**
+!exercises/**

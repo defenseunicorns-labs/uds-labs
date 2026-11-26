@@ -1,0 +1,7 @@
+---
+apiVersion: v2
+name: educates-python-to-uds
+description: Educates Workshop and TrainingPortal for the Python-to-UDS spike
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

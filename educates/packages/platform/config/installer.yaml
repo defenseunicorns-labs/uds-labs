@@ -1,0 +1,52 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Input for Educates 3.8.0's official manifest renderer. The custom provider
+# keeps Contour off host ports so it can coexist with UDS Core's Istio gateways.
+
+---
+clusterInfrastructure:
+  provider: custom
+clusterPackages:
+  contour:
+    enabled: true
+    settings:
+      infraProvider: custom
+      contour:
+        replicas: 1
+      configFileContents:
+        defaultHttpVersions:
+          - HTTP/1.1
+      service:
+        type: LoadBalancer
+        useHostPorts: false
+  cert-manager:
+    enabled: false
+    settings: {}
+  external-dns:
+    enabled: false
+    settings: {}
+  certs:
+    enabled: false
+    settings: {}
+  kyverno:
+    enabled: true
+    settings: {}
+  kapp-controller:
+    enabled: false
+    settings: {}
+  educates:
+    enabled: true
+    settings:
+      clusterIngress:
+        domain: "__EDUCATES_DOMAIN__"
+      clusterSecurity:
+        policyEngine: kyverno
+      workshopSecurity:
+        rulesEngine: kyverno
+clusterIngress:
+  domain: "__EDUCATES_DOMAIN__"
+clusterSecurity:
+  policyEngine: kyverno
+workshopSecurity:
+  rulesEngine: kyverno

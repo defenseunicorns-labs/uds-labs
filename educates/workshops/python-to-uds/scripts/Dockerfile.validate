@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+
+ARG EDUCATES_VERSION=3.8.0
+FROM ghcr.io/educates/educates-base-environment:${EDUCATES_VERSION}
+
+ARG TARGETARCH
+ARG EDUCATES_VERSION
+
+USER root
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) sha256="4764303d0726380c1a4c1a03d38cd6b87685598757f146739317d413f2d8ed08" ;; \
+      arm64) sha256="0323a2b2d37986ff83280a507dc81bbc6f797e6875e785557e3c32b94f5ff8ed" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl --fail --location --silent --show-error \
+      --output /usr/local/bin/educates \
+      "https://github.com/educates/educates-training-platform/releases/download/${EDUCATES_VERSION}/educates-linux-${TARGETARCH}"; \
+    echo "${sha256}  /usr/local/bin/educates" | sha256sum --check --status; \
+    chmod 0755 /usr/local/bin/educates
+
+USER 1001
+ENTRYPOINT ["educates"]

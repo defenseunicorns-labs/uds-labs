@@ -1,0 +1,4 @@
+---
+portal:
+  sessionsMaximum: 1
+  anonymousMaximum: 1

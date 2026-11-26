@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionsMaximum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent workshop sessions"
+        },
+        "anonymousMaximum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent anonymous sessions"
+        }
+      },
+      "required": ["sessionsMaximum", "anonymousMaximum"]
+    }
+  },
+  "required": ["portal"]
+}

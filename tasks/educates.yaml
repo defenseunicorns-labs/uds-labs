@@ -7,40 +7,108 @@
 
 tasks:
   - name: validate
-    description: Render and statically validate the Educates Python-to-UDS workshop
+    description: Validate both Educates Zarf packages and render the workshop
     actions:
       - cmd: ./educates/workshops/python-to-uds/scripts/validate.sh
+      - cmd: uds zarf dev lint educates/packages/platform
+      - cmd: |
+          set -euo pipefail
+          PLATFORM_MANIFEST=$(mktemp)
+          WORKSHOP_MANIFEST=$(mktemp)
+          trap 'rm -f "$PLATFORM_MANIFEST" "$WORKSHOP_MANIFEST"' EXIT
+
+          grep -q '__EDUCATES_DOMAIN__' educates/packages/platform/chart/files/educates.yaml
+          test "$(uds zarf tools yq -r 'select(.kind == "Namespace") | .metadata.name' \
+            educates/packages/platform/chart/files/educates.yaml \
+            | grep -Ec '^(educates|kyverno|projectcontour)$')" -eq 3
+
+          uds zarf dev inspect manifests educates/packages/platform \
+            --set-values domain=workshops.example.test > "$PLATFORM_MANIFEST"
+          grep -q 'workshops.example.test' "$PLATFORM_MANIFEST"
+          ! grep -q '__EDUCATES_DOMAIN__' "$PLATFORM_MANIFEST"
+
+          uds zarf dev inspect manifests educates/workshops/python-to-uds \
+            --set-values portal.sessionsMaximum=2 \
+            --set-values portal.anonymousMaximum=2 > "$WORKSHOP_MANIFEST"
+          grep -q 'maximum: 2' "$WORKSHOP_MANIFEST"
+
+  - name: render-platform
+    description: Regenerate platform manifests with the official Educates CLI container
+    actions:
+      - cmd: ./educates/packages/platform/scripts/render-manifests.sh
 
   - name: build-image
-    description: Build and publish the Educates workshop image
+    description: Build the arm64 Python-to-UDS workshop image
     inputs:
       repository:
         description: OCI repository prefix for the workshop image
         default: ghcr.io/defenseunicorns-labs
       version:
         description: Workshop image version
-        default: dev
+        default: 0.1.0
       platforms:
-        description: Buildx target platforms
+        description: Docker target platforms
         default: linux/arm64
+      push:
+        description: Push the image after building (1) or retain it locally (0)
+        default: "0"
     actions:
       - cmd: |
           IMAGE_REPOSITORY="${{ .inputs.repository }}" \
           WORKSHOP_VERSION="${{ .inputs.version }}" \
           TARGET_PLATFORMS="${{ .inputs.platforms }}" \
+          PUSH_IMAGE="${{ .inputs.push }}" \
           ./educates/workshops/python-to-uds/scripts/build-image.sh
 
-  - name: publish
-    description: Publish Educates workshop content and export its deployable resource
+  - name: create-platform-package
+    description: Create the Educates platform Zarf package
     inputs:
-      repository:
-        description: OCI repository prefix for workshop artifacts
-        default: ghcr.io/defenseunicorns-labs
-      version:
-        description: Workshop content version
-        default: dev
+      architecture:
+        description: Target package architecture
+        default: arm64
     actions:
       - cmd: |
-          IMAGE_REPOSITORY="${{ .inputs.repository }}" \
-          WORKSHOP_VERSION="${{ .inputs.version }}" \
-          ./educates/workshops/python-to-uds/scripts/publish-workshop.sh
+          set -euo pipefail
+          cd educates/packages/platform
+          uds zarf package create . \
+            --architecture="${{ .inputs.architecture }}" \
+            --skip-sbom \
+            --confirm
+
+  - name: create-workshop-package
+    description: Build the workshop image and create its Zarf package
+    inputs:
+      architecture:
+        description: Target package architecture
+        default: arm64
+    actions:
+      - task: build-image
+        with:
+          platforms: linux/${{ .inputs.architecture }}
+          push: "0"
+      - cmd: |
+          set -euo pipefail
+          cd educates/workshops/python-to-uds
+          uds zarf package create . \
+            --architecture="${{ .inputs.architecture }}" \
+            --skip-sbom \
+            --confirm
+
+  - name: create-bundle
+    description: Create the arm64 bundle containing platform and workshop packages
+    inputs:
+      architecture:
+        description: Target bundle architecture
+        default: arm64
+    actions:
+      - task: create-platform-package
+        with:
+          architecture: ${{ .inputs.architecture }}
+      - task: create-workshop-package
+        with:
+          architecture: ${{ .inputs.architecture }}
+      - cmd: |
+          uds create educates/bundle \
+            --architecture="${{ .inputs.architecture }}" \
+            --confirm \
+            --no-progress

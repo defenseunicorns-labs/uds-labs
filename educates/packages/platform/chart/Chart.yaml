@@ -1,0 +1,7 @@
+---
+apiVersion: v2
+name: educates
+description: Rendered Educates 3.8.0 platform, Contour, and Kyverno resources
+type: application
+version: 3.8.0-uds.0
+appVersion: "3.8.0"

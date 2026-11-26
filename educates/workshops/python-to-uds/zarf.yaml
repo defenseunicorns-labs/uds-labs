@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+---
+apiVersion: zarf.dev/v1beta1
+kind: ZarfPackageConfig
+metadata:
+  name: educates-python-to-uds
+  description: ARM64 Educates workshop for packaging a stateless application for UDS
+  version: 0.1.0
+
+values:
+  files:
+    - zarf-values.yaml
+  schema: zarf-values.schema.json
+
+components:
+  - name: workshop
+    description: Python-to-UDS workshop image, definition, and training portal
+    charts:
+      - name: educates-python-to-uds
+        local:
+          path: chart
+        namespace: educates
+        values:
+          - sourcePath: .portal.sessionsMaximum
+            targetPath: .portal.sessionsMaximum
+          - sourcePath: .portal.anonymousMaximum
+            targetPath: .portal.anonymousMaximum
+    images:
+      - name: ghcr.io/defenseunicorns-labs/educates-python-to-uds-image:0.1.0
+        source: daemon

@@ -20,4 +20,10 @@ RUN set -eux; \
     echo "${uds_sha256}  /usr/local/bin/uds" | sha256sum --check --status; \
     chmod 0755 /usr/local/bin/uds
 
+COPY --chown=1001:0 workshop /opt/workshop
+COPY --chown=1001:0 exercises /home/eduk8s/exercises
+COPY --chown=1001:0 README.md /home/eduk8s/README.md
+
+RUN fix-permissions /home/eduk8s /opt/workshop
+
 USER 1001

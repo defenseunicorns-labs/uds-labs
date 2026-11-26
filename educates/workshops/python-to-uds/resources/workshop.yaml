@@ -13,24 +13,8 @@ spec:
     preparing it for UDS packaging from an Educates workshop session.
   duration: 60m
   difficulty: intermediate
-  publish:
-    image: "$(image_repository)/educates-python-to-uds-files:$(workshop_version)"
-    files:
-      - directory:
-          path: .
-        includePaths:
-          - /workshop/**
-          - /exercises/**
-          - /README.md
   workshop:
-    image: "$(image_repository)/educates-python-to-uds-image:$(workshop_version)"
-    files:
-      - image:
-          url: "$(image_repository)/educates-python-to-uds-files:$(workshop_version)"
-        includePaths:
-          - /workshop/**
-          - /exercises/**
-          - /README.md
+    image: "ghcr.io/defenseunicorns-labs/educates-python-to-uds-image:0.1.0"
   session:
     resources:
       memory: 2Gi

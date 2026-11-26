@@ -1,0 +1,41 @@
+apiVersion: training.educates.dev/v1beta1
+kind: Workshop
+metadata:
+  name: {{ .Values.workshop.name }}
+spec:
+  title: Package a Stateless App for UDS
+  description: >-
+    ARM64 platform spike for building a stateless application image and
+    preparing it for UDS packaging from an Educates workshop session.
+  duration: {{ .Values.workshop.duration }}
+  difficulty: intermediate
+  workshop:
+    image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+    imagePullPolicy: {{ .Values.image.pullPolicy }}
+  session:
+    resources:
+      memory: 2Gi
+      storage: 5Gi
+    namespaces:
+      budget: large
+      security:
+        token:
+          enabled: true
+    applications:
+      terminal:
+        enabled: true
+        layout: split
+      editor:
+        enabled: true
+      examiner:
+        enabled: true
+      docker:
+        enabled: true
+        memory: 2Gi
+        storage: 10Gi
+      console:
+        enabled: false
+      registry:
+        enabled: false
+      vcluster:
+        enabled: false

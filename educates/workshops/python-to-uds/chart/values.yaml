@@ -1,0 +1,16 @@
+---
+image:
+  repository: ghcr.io/defenseunicorns-labs/educates-python-to-uds-image
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+portal:
+  name: uds-labs
+  sessionsMaximum: 1
+  anonymousMaximum: 1
+
+workshop:
+  name: educates-python-to-uds
+  duration: 60m
+  reserved: 0
+  expires: 75m

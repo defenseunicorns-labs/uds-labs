@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+---
+apiVersion: zarf.dev/v1beta1
+kind: ZarfPackageConfig
+metadata:
+  name: educates
+  description: Educates training platform with Contour and Kyverno
+  version: 3.8.0-uds.0
+
+values:
+  files:
+    - zarf-values.yaml
+  schema: zarf-values.schema.json
+
+components:
+  - name: platform
+    description: Educates controllers, Contour ingress, and Kyverno policy engine
+    charts:
+      - name: educates
+        local:
+          path: chart
+        namespace: educates
+        values:
+          - sourcePath: .domain
+            targetPath: .domain
+    images:
+      - name: docker.io/envoyproxy/envoy:v1.31.5
+      - name: ghcr.io/educates/educates-base-environment:3.8.0
+      - name: ghcr.io/educates/educates-pause-container:3.8.0
+      - name: ghcr.io/educates/educates-secrets-manager:3.8.0
+      - name: ghcr.io/educates/educates-session-manager:3.8.0
+      - name: ghcr.io/educates/educates-training-portal:3.8.0
+      - name: ghcr.io/projectcontour/contour:v1.30.2
+      - name: reg.kyverno.io/kyverno/background-controller:v1.15.1
+      - name: reg.kyverno.io/kyverno/cleanup-controller:v1.15.1
+      - name: reg.kyverno.io/kyverno/kyvernopre:v1.15.1
+      - name: reg.kyverno.io/kyverno/kyverno:v1.15.1
+      - name: reg.kyverno.io/kyverno/reports-controller:v1.15.1
+
+  - name: docker-support
+    description: Privileged per-session Docker daemon used by packaging workshops
+    images:
+      - name: docker.io/library/docker:27.5.1-dind
