@@ -1,0 +1,8 @@
+#!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+set -euo pipefail
+
+[ "$(docker image inspect --format '{{.Architecture}}' myapp:dev)" = "arm64" ]
+docker run --rm myapp:dev python -c 'import app; assert app.app.url_map'

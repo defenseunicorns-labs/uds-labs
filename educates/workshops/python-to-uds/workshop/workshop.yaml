@@ -1,0 +1,9 @@
+---
+name: Package a Stateless App for UDS
+
+modules:
+  activate:
+    - 00-workshop-overview
+    - 01-verify-arm64-runtime
+    - 02-build-application
+    - 99-workshop-summary

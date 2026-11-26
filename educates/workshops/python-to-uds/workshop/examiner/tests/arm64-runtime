@@ -1,0 +1,11 @@
+#!/bin/bash
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+set -euo pipefail
+
+[ "${PLATFORM_ARCH:-}" = "arm64" ]
+[ "$(uname -m)" = "aarch64" ]
+uds version | grep -q '0.35.1'
+[ "$(docker version --format '{{.Server.Arch}}')" = "arm64" ]
+kubectl auth can-i get pods >/dev/null

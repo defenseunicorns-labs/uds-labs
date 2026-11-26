@@ -1,0 +1,60 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+---
+apiVersion: training.educates.dev/v1beta1
+kind: Workshop
+metadata:
+  name: educates-python-to-uds
+spec:
+  title: Package a Stateless App for UDS
+  description: >-
+    ARM64 platform spike for building a stateless application image and
+    preparing it for UDS packaging from an Educates workshop session.
+  duration: 60m
+  difficulty: intermediate
+  publish:
+    image: "$(image_repository)/educates-python-to-uds-files:$(workshop_version)"
+    files:
+      - directory:
+          path: .
+        includePaths:
+          - /workshop/**
+          - /exercises/**
+          - /README.md
+  workshop:
+    image: "$(image_repository)/educates-python-to-uds-image:$(workshop_version)"
+    files:
+      - image:
+          url: "$(image_repository)/educates-python-to-uds-files:$(workshop_version)"
+        includePaths:
+          - /workshop/**
+          - /exercises/**
+          - /README.md
+  session:
+    resources:
+      memory: 2Gi
+      storage: 5Gi
+    namespaces:
+      budget: large
+      security:
+        token:
+          enabled: true
+    applications:
+      terminal:
+        enabled: true
+        layout: split
+      editor:
+        enabled: true
+      examiner:
+        enabled: true
+      docker:
+        enabled: true
+        memory: 2Gi
+        storage: 10Gi
+      console:
+        enabled: false
+      registry:
+        enabled: false
+      vcluster:
+        enabled: false

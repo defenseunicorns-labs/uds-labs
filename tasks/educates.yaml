@@ -1,0 +1,46 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Educates arm64 platform spike
+
+---
+
+tasks:
+  - name: validate
+    description: Render and statically validate the Educates Python-to-UDS workshop
+    actions:
+      - cmd: ./educates/workshops/python-to-uds/scripts/validate.sh
+
+  - name: build-image
+    description: Build and publish the Educates workshop image
+    inputs:
+      repository:
+        description: OCI repository prefix for the workshop image
+        default: ghcr.io/defenseunicorns-labs
+      version:
+        description: Workshop image version
+        default: dev
+      platforms:
+        description: Buildx target platforms
+        default: linux/arm64
+    actions:
+      - cmd: |
+          IMAGE_REPOSITORY="${{ .inputs.repository }}" \
+          WORKSHOP_VERSION="${{ .inputs.version }}" \
+          TARGET_PLATFORMS="${{ .inputs.platforms }}" \
+          ./educates/workshops/python-to-uds/scripts/build-image.sh
+
+  - name: publish
+    description: Publish Educates workshop content and export its deployable resource
+    inputs:
+      repository:
+        description: OCI repository prefix for workshop artifacts
+        default: ghcr.io/defenseunicorns-labs
+      version:
+        description: Workshop content version
+        default: dev
+    actions:
+      - cmd: |
+          IMAGE_REPOSITORY="${{ .inputs.repository }}" \
+          WORKSHOP_VERSION="${{ .inputs.version }}" \
+          ./educates/workshops/python-to-uds/scripts/publish-workshop.sh

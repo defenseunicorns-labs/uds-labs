@@ -33,6 +33,7 @@ includes:
   - access: tasks/access.yaml
   - workflow: tasks/workflow.yaml
   - preview: tasks/preview.yaml
+  - educates: tasks/educates.yaml
 
 variables:
   # Set by the release workflow. Leaving these empty keeps local package
