@@ -5,7 +5,7 @@ kind: ZarfPackageConfig
 metadata:
   name: educates-python-to-uds
   description: ARM64 Educates workshop for packaging a stateless application for UDS
-  version: 0.2.0-uds.1
+  version: 0.2.0-uds.2
 
 values:
   files:
@@ -37,6 +37,12 @@ components:
       onDeploy:
         before:
           - cmd: ./zarf tools kubectl wait --for=create namespace/uds-labs-ui --timeout=300s
+        onSuccess:
+          # Kopf does not rebuild its discovery watch after RBAC changes. Restart
+          # the portal after the read-only CRD binding is installed.
+          - cmd: ./zarf tools kubectl wait --for=create deployment/training-portal -n uds-labs-ui --timeout=300s
+          - cmd: ./zarf tools kubectl rollout restart deployment/training-portal -n uds-labs-ui
+          - cmd: ./zarf tools kubectl rollout status deployment/training-portal -n uds-labs-ui --timeout=300s
     charts:
       - name: uds-python-to-uds-portal-config
         local:

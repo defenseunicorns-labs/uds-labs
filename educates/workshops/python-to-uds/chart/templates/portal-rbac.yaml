@@ -1,0 +1,19 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+# Educates 4.0.0-alpha.10 starts Kopf in each training portal, but its generated
+# training-portal role does not include CRD discovery. Bind the platform's
+# read-only compatibility role before the TrainingPortal is reconciled.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: educates-python-to-uds-portal-crd-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: educates-platform-crd-reader
+subjects:
+  - kind: ServiceAccount
+    name: training-portal
+    namespace: {{ .Values.portal.name }}-ui

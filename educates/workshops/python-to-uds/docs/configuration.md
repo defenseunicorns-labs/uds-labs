@@ -12,7 +12,7 @@ The Python-to-UDS workshop package exposes these Zarf package values:
 Example standalone deployment override:
 
 ```bash
-uds zarf package deploy zarf-package-educates-python-to-uds-arm64-0.2.0-uds.1.tar.zst \
+uds zarf package deploy zarf-package-educates-python-to-uds-arm64-0.2.0-uds.2.tar.zst \
   --set-values portal.sessionsMaximum=2 \
   --set-values portal.anonymousMaximum=2 \
   --confirm

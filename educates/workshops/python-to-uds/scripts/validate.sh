@@ -42,6 +42,9 @@ helm template uds-python-to-uds-portal-config "${root}/portal-chart" \
 
 grep -q 'kind: Workshop' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: TrainingPortal' "${tmp}/workshop-manifests.yaml"
+grep -q 'name: educates-python-to-uds-portal-crd-reader' \
+  "${tmp}/workshop-manifests.yaml"
+grep -q 'name: educates-platform-crd-reader' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: ServiceEntry' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: Package' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: Package' "${tmp}/portal-manifests.yaml"

@@ -6,6 +6,7 @@
 - One environment `Package` protects the shared backend namespace. Per-session routing namespaces contain separate `Package` resources whose selectors intentionally match no local pods; the internal `ServiceEntry` selects the actual backend pod in the environment namespace.
 - An Istio `ServiceEntry` is used instead of an `ExternalName` Service because UDS policy rejects `ExternalName` Services.
 - The trusted Educates session manager receives Package and ServiceEntry lifecycle permissions from the separately installed platform package. Learners do not receive those permissions or a RoleBinding in routing namespaces.
+- Educates 4.0.0-alpha.10 starts Kopf inside each training portal but omits CRD discovery from the generated portal role. The workshop chart binds only its `training-portal` service account to the platform's read-only CRD-reader role (`get`, `list`, and `watch`). The deploy lifecycle restarts the portal after installing that binding because Kopf does not rebuild the failed discovery watch dynamically.
 - Docker-in-Docker is privileged. This workshop is restricted to disposable, dedicated clusters pending live Pepr review and broader security qualification.
 - No policy Exemption is included. If live deployment is denied, first determine whether the workshop can be changed to satisfy policy before considering an exemption.
 

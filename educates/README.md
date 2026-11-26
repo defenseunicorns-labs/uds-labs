@@ -20,7 +20,7 @@ uds run educates:create-bundle
 The package build downloads the pinned upstream arm64 images and may take several minutes. It produces:
 
 ```text
-educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.1.tar.zst
+educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.2.tar.zst
 ```
 
 ## Deploy
@@ -29,7 +29,7 @@ Provision a disposable arm64 Kubernetes 1.31+ cluster with UDS Core base, a tena
 
 ```bash
 uds deploy \
-  educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.1.tar.zst \
+  educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.2.tar.zst \
   --set DOMAIN=uds.dev \
   --confirm
 ```

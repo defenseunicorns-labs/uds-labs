@@ -3,5 +3,5 @@ apiVersion: v2
 name: educates-python-to-uds
 description: Educates Workshop and TrainingPortal for the Python-to-UDS spike
 type: application
-version: 0.2.1
+version: 0.2.2
 appVersion: "0.2.0"

@@ -6,6 +6,10 @@ set -euo pipefail
 
 kubectl=(uds zarf tools kubectl)
 
+[[ $("${kubectl[@]}" auth can-i watch \
+  customresourcedefinitions.apiextensions.k8s.io \
+  --as=system:serviceaccount:uds-labs-ui:training-portal) == yes ]]
+
 "${kubectl[@]}" rollout status deployment/session-manager \
   -n educates-platform --timeout=180s
 "${kubectl[@]}" rollout status deployment/secrets-manager \
