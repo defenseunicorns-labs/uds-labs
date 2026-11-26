@@ -57,6 +57,11 @@ tasks:
           PUSH_IMAGE="${{ .inputs.push }}" \
           ./educates/workshops/python-to-uds/scripts/build-image.sh
 
+  - name: verify-deployment
+    description: Verify platform, portal, and any allocated session routes
+    actions:
+      - cmd: ./educates/workshops/python-to-uds/scripts/verify-deployment.sh
+
   - name: create-platform-package
     description: Create the Educates platform Zarf package
     inputs:

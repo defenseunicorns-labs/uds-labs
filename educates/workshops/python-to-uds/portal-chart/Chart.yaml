@@ -1,0 +1,7 @@
+---
+apiVersion: v2
+name: uds-python-to-uds-portal-config
+description: UDS integration for the Educates-owned Python-to-UDS portal namespace
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

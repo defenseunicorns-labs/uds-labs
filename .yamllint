@@ -8,6 +8,7 @@ ignore:
   - "chart/templates/**"
   - "packages/vm-images/chart/templates/**"
   - "educates/**/chart/templates/**"
+  - "educates/**/portal-chart/templates/**"
 
 rules:
   anchors: enable

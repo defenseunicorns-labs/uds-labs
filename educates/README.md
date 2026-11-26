@@ -20,7 +20,7 @@ uds run educates:create-bundle
 The package build downloads the pinned upstream arm64 images and may take several minutes. It produces:
 
 ```text
-educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.2.0.tar.zst
+educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.0.tar.zst
 ```
 
 ## Deploy
@@ -29,17 +29,18 @@ Provision a disposable arm64 Kubernetes 1.31+ cluster with UDS Core base, a tena
 
 ```bash
 uds deploy \
-  educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.2.0.tar.zst \
+  educates/bundle/uds-bundle-educates-uds-labs-spike-arm64-0.3.0.tar.zst \
   --set DOMAIN=uds.dev \
   --confirm
 ```
 
-Inspect the generated portal resources and credentials without the Educates CLI:
+Verify the platform, portal route, and any allocated session routes without the Educates CLI:
 
 ```bash
-kubectl get trainingportals.training.educates.dev
-kubectl describe trainingportal uds-labs
+uds run educates:verify-deployment
 ```
+
+The portal is available at `https://uds-labs-ui.<tenant-domain>`. Allocate a session and rerun the verification task to check its dashboard and editor VirtualServices.
 
 ## Upstream runtime
 
@@ -53,6 +54,6 @@ The chart is digest-pinned in the Zarf package. The local Helm chart contains on
 
 ## Status
 
-This remains a spike. Static package rendering and validation work, but the separately packaged Python-to-UDS workshop still needs the dynamic UDS routing objects demonstrated by the 4.0 reference implementation. Live arm64 deployment, package validation, session routing, cleanup, and removal remain unverified. Educates 4.0.0-alpha.10 is a prerelease.
+This remains a spike. The workshop now includes the reference implementation's portal and dynamic session routing model. Live arm64 deployment, privileged Docker policy behavior, session cleanup, package validation, and removal remain verification gates. Educates 4.0.0-alpha.10 is a prerelease.
 
 See [`docs/research/2026-11-26-educates-arm64-platform-assessment.md`](../docs/research/2026-11-26-educates-arm64-platform-assessment.md) for the original architecture assessment.

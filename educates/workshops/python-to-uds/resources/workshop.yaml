@@ -9,12 +9,55 @@ metadata:
 spec:
   title: Package a Stateless App for UDS
   description: >-
-    ARM64 platform spike for building a stateless application image and
-    preparing it for UDS packaging from an Educates workshop session.
+    ARM64 platform spike for building a stateless application image and preparing it for UDS packaging from an Educates workshop session.
+  version: 0.2.0
   duration: 60m
   difficulty: intermediate
   workshop:
     image: "ghcr.io/defenseunicorns-labs/educates-python-to-uds-image:0.1.0"
+    imagePullPolicy: IfNotPresent
+  environment:
+    objects:
+      # Sessions share this backend namespace. Exactly one Package manages it.
+      - apiVersion: uds.dev/v1alpha1
+        kind: Package
+        metadata:
+          name: educates-environment
+          namespace: $(workshop_namespace)
+        spec:
+          network:
+            serviceMesh:
+              mode: ambient
+            allow:
+              - description: Tenant gateway to workshop dashboards
+                direction: Ingress
+                selector:
+                  training.educates.dev/session.services.workshop: "true"
+                remoteNamespace: istio-tenant-gateway
+                remoteSelector:
+                  app: tenant-ingressgateway
+                port: 10080
+              - description: Native portal readiness and session management
+                direction: Ingress
+                selector:
+                  training.educates.dev/session.services.workshop: "true"
+                remoteNamespace: uds-labs-ui
+                remoteSelector:
+                  deployment: training-portal
+                port: 10080
+              - description: Session to native portal OAuth and API
+                direction: Egress
+                selector:
+                  training.educates.dev/session.services.workshop: "true"
+                remoteNamespace: uds-labs-ui
+                remoteSelector:
+                  deployment: training-portal
+                port: 8080
+              - description: Session Kubernetes access
+                direction: Egress
+                selector:
+                  training.educates.dev/session.services.workshop: "true"
+                remoteGenerated: KubeAPI
   session:
     resources:
       memory: 2Gi
@@ -42,3 +85,64 @@ spec:
         enabled: false
       vcluster:
         enabled: false
+    objects:
+      # role=custom prevents Educates binding the learner into this namespace.
+      - apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: $(session_namespace)-routing
+          annotations:
+            training.educates.dev/session.role: custom
+      # Register an internal alias in Istio instead of a forbidden ExternalName Service.
+      - apiVersion: networking.istio.io/v1
+        kind: ServiceEntry
+        metadata:
+          name: $(session_namespace)-alias
+          namespace: $(workshop_namespace)
+        spec:
+          hosts:
+            - dashboard.$(session_namespace)-routing.svc.$(cluster_domain)
+          location: MESH_INTERNAL
+          resolution: STATIC
+          ports:
+            - name: http
+              number: 80
+              protocol: HTTP
+              targetPort: 10080
+          workloadSelector:
+            labels:
+              deployment: $(session_namespace)
+      - apiVersion: uds.dev/v1alpha1
+        kind: Package
+        metadata:
+          name: educates-session
+          namespace: $(session_namespace)-routing
+        spec:
+          network:
+            serviceMesh:
+              mode: ambient
+            expose:
+              - description: Session dashboard
+                service: dashboard
+                selector:
+                  educates.dev/routing-only: "true"
+                gateway: tenant
+                host: $(session_namespace)
+                port: 80
+                targetPort: 10080
+              - description: Session editor
+                service: dashboard
+                selector:
+                  educates.dev/routing-only: "true"
+                gateway: tenant
+                host: editor-$(session_namespace)
+                port: 80
+                targetPort: 10080
+              - description: Legacy session editor alias
+                service: dashboard
+                selector:
+                  educates.dev/routing-only: "true"
+                gateway: tenant
+                host: $(session_namespace)-editor
+                port: 80
+                targetPort: 10080

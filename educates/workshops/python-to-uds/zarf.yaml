@@ -5,7 +5,7 @@ kind: ZarfPackageConfig
 metadata:
   name: educates-python-to-uds
   description: ARM64 Educates workshop for packaging a stateless application for UDS
-  version: 0.1.0
+  version: 0.2.0-uds.0
 
 values:
   files:
@@ -28,3 +28,17 @@ components:
     images:
       - name: ghcr.io/defenseunicorns-labs/educates-python-to-uds-image:0.1.0
         source: daemon
+
+  # Educates creates and owns the portal namespace before this chart installs
+  # its UDS Package. Do not pre-create the namespace in the workshop chart.
+  - name: workshop-routing
+    description: UDS portal exposure and cross-namespace session traffic policy
+    actions:
+      onDeploy:
+        before:
+          - cmd: ./zarf tools kubectl wait --for=create namespace/uds-labs-ui --timeout=300s
+    charts:
+      - name: uds-python-to-uds-portal-config
+        local:
+          path: portal-chart
+        namespace: uds-labs-ui

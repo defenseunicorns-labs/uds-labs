@@ -4,6 +4,10 @@ metadata:
   name: {{ .Values.portal.name }}
 spec:
   portal:
+    ingress:
+      hostname: {{ .Values.portal.host }}
+    updates:
+      workshop: true
     registration:
       type: anonymous
     catalog:
@@ -16,3 +20,4 @@ spec:
       capacity: {{ .Values.portal.sessionsMaximum }}
       reserved: {{ .Values.workshop.reserved }}
       expires: {{ .Values.workshop.expires }}
+      orphaned: 5m

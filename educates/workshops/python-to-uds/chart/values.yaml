@@ -6,6 +6,7 @@ image:
 
 portal:
   name: uds-labs
+  host: uds-labs-ui
   sessionsMaximum: 1
   anonymousMaximum: 1
 

@@ -16,9 +16,10 @@
     "portal": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "sessionsMaximum", "anonymousMaximum"],
+      "required": ["name", "host", "sessionsMaximum", "anonymousMaximum"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "const": "uds-labs" },
+        "host": { "type": "string", "const": "uds-labs-ui" },
         "sessionsMaximum": { "type": "integer", "minimum": 1 },
         "anonymousMaximum": { "type": "integer", "minimum": 1 }
       }

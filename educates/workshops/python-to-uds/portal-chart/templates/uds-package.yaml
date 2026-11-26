@@ -1,0 +1,49 @@
+# Copyright 2026 Defense Unicorns
+# SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Defense-Unicorns-Commercial
+
+---
+apiVersion: uds.dev/v1alpha1
+kind: Package
+metadata:
+  name: educates-portal
+  namespace: {{ .Release.Namespace }}
+spec:
+  network:
+    serviceMesh:
+      mode: ambient
+    expose:
+      - description: Python-to-UDS Educates portal
+        service: training-portal
+        selector:
+          deployment: training-portal
+        gateway: tenant
+        host: uds-labs-ui
+        port: 80
+        targetPort: 8080
+    allow:
+      - description: Portal manages Educates sessions through Kubernetes
+        direction: Egress
+        selector:
+          deployment: training-portal
+        remoteGenerated: KubeAPI
+      - description: Portal readiness and session management across environment generations
+        direction: Egress
+        selector:
+          deployment: training-portal
+        remoteNamespace: "*"
+        remoteSelector:
+          training.educates.dev/portal.name: uds-labs
+          training.educates.dev/session.services.workshop: "true"
+        port: 10080
+      - description: Native session OAuth and API to portal
+        direction: Ingress
+        selector:
+          deployment: training-portal
+        remoteNamespace: "*"
+        remoteSelector:
+          training.educates.dev/portal.name: uds-labs
+          training.educates.dev/session.services.workshop: "true"
+        port: 8080
+      {{- with .Values.additionalNetworkAllow }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}

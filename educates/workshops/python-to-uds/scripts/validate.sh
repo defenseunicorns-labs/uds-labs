@@ -34,11 +34,18 @@ fi
 
 unzip -t "${tmp}/workshop.zip" >/dev/null
 helm lint "${root}/chart"
+helm lint "${root}/portal-chart"
 helm template educates-python-to-uds "${root}/chart" --namespace educates \
   >"${tmp}/workshop-manifests.yaml"
+helm template uds-python-to-uds-portal-config "${root}/portal-chart" \
+  --namespace uds-labs-ui >"${tmp}/portal-manifests.yaml"
 
 grep -q 'kind: Workshop' "${tmp}/workshop-manifests.yaml"
 grep -q 'kind: TrainingPortal' "${tmp}/workshop-manifests.yaml"
+grep -q 'kind: ServiceEntry' "${tmp}/workshop-manifests.yaml"
+grep -q 'kind: Package' "${tmp}/workshop-manifests.yaml"
+grep -q 'kind: Package' "${tmp}/portal-manifests.yaml"
+grep -q 'host: uds-labs-ui' "${tmp}/portal-manifests.yaml"
 grep -q 'arm64)' "${root}/Dockerfile"
 grep -q 'amd64)' "${root}/Dockerfile"
 
